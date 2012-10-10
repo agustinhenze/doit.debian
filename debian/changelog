@@ -1,0 +1,12 @@
+doit (0.17.0-2) unstable; urgency=low
+
+  * Workaround a debhelper rewrite so we leave the version dependency up to
+    the python alternatives system.
+
+ -- Agustin Henze <tin@sluc.org.ar>  Wed, 10 Oct 2012 12:16:18 -0300
+
+doit (0.17.0-1) unstable; urgency=low
+
+  * Initial release (Closes: #689742).
+
+ -- Agustin Henze <tin@sluc.org.ar>  Wed, 03 Oct 2012 21:23:41 -0300

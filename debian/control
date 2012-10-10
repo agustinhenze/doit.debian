@@ -1,0 +1,50 @@
+Source: doit
+Section: python
+Priority: optional
+Maintainer: Agustin Henze <tin@sluc.org.ar>
+Uploaders: Ulises Vitulli <dererk@debian.org>
+Build-Depends: debhelper (>= 9)
+Build-Depends-Indep: python-all,
+ python-support (>= 1),
+ bash-completion,
+ python-sphinx,
+ python-pyinotify,
+ python-setuptools,
+Standards-Version: 3.9.3
+XS-Python-Version: all
+Homepage: http://python-doit.sourceforge.net/
+
+Package: python-doit
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, python-pyinotify
+Suggests: python-doit-doc
+Description: Automation tool for executing any kind of task in a build-tools fashion
+ DoIt is an automation tool that brings the power of build-tools to execute any
+ kind of task.
+ .
+ Build-tools were created with two primary goals:
+  * To keep track of inter-dependencies between tasks and ensure that they
+ will be executed in the correct order.
+  * To be faster than manually executing all tasks. Actually, it cannot really
+ execute a given task faster, instead it has some mechanism to determine if a
+ task is up-to-date or not. So it is faster by executing less tasks, executing
+ only the ones required (not up-to-date).
+
+Package: python-doit-doc
+Architecture: all
+Section: doc
+Depends: ${misc:Depends}, libjs-jquery, libjs-underscore
+Recommends: python-doit
+Description: Automation tool for executing any kind of task in a build-tools fashion
+ DoIt is an automation tool that brings the power of build-tools to execute any
+ kind of task.
+ .
+ Build-tools were created with two primary goals:
+  * To keep track of inter-dependencies between tasks and ensure that they
+ will be executed in the correct order.
+  * To be faster than manually executing all tasks. Actually it can not really
+ execute a given task faster, instead it has some mechanism to determine if a
+ task is up-to-date or not. So it is faster by executing less tasks, executing
+ only the ones required (not up-to-date).
+ .
+ This package contains API documentation and examples.

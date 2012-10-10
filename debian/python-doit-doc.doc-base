@@ -1,0 +1,10 @@
+Document: python-doit-reference-manual
+Title: Python doit Library Reference Manual
+Author: xxxx
+Abstract: doit is an automation tool for bring the power of build-tools
+ to execute any kind of task
+Section: Programming/Python
+
+Format: HTML
+Index: /usr/share/doc/python-doit-doc/html/index.html
+Files: /usr/share/doc/python-doit-doc/html/*

@@ -1,0 +1,43 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+PYVERS :=  $(shell pyversions -s)
+#PY3VERS := $(shell py3versions -s)
+
+%:
+	dh $@ --with python2 #,python3
+
+override_dh_auto_build:
+
+override_dh_auto_clean:
+	dh_auto_clean -- --all
+	rm -rf build
+	rm -rf doc/_build
+	rm -f .hgignore
+	rm -f .hgtags
+
+override_dh_auto_install:
+	dh_auto_install
+	dh_bash-completion
+	set -ex; \
+	for py in $(PYVERS); do \
+		$$py setup.py install --root debian/python-doit \
+				      --install-layout=deb; \
+	done
+	set -ex; \
+	for py in $(PY3VERS); do \
+		$$py setup.py install --root debian/python3-doit \
+				      --install-layout=deb; \
+	done
+	# Doc
+	set -ex; \
+		cd doc; \
+		make html; \
+		cd -;
+	rm doc/_build/html/_static/underscore.js
+	rm doc/_build/html/_static/jquery.js
+	sed 's@_static/jquery.js@/usr/share/javascript/jquery/jquery.js@g' -i doc/_build/html/*.html
+	sed 's@_static/underscore.js@/usr/share/javascript/underscore/underscore.js@g' -i doc/_build/html/*.html
