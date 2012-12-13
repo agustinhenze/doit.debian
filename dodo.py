@@ -103,9 +103,12 @@ def task_epydoc():
             'targets': [target_path]}
 
 def task_sphinx():
-    """generate website docs"""
-    action = "sphinx-build -b html -d %s_build/doctrees %s %s"
-    return {'actions': [action % (DOC_ROOT, DOC_ROOT, DOC_BUILD_PATH)]}
+    """generate website docs (include analytics)"""
+    action = "sphinx-build -b html -d %s_build/doctrees -A include_analytics=1 %s %s"
+    return {
+        'actions': [action % (DOC_ROOT, DOC_ROOT, DOC_BUILD_PATH)],
+        'verbosity': 2,
+        }
 
 
 def task_website():
@@ -115,8 +118,22 @@ def task_website():
             }
 
 def task_website_update():
-    """update website on sourceforge"""
-    return {'actions': ["rsync -avP -e ssh %s* schettino72,python-doit@web.sourceforge.net:htdocs/" % DOC_BUILD_PATH]}
+    """update website on SITE_PATH
+    website is hosted on github-pages
+    this task just copy the generated content to SITE_PATH,
+    need to commit/push to deploy site.
+    """
+    SITE_PATH = '../doit-website'
+    SITE_URL = 'pydoit.org'
+    return {
+        'actions': [
+            "rsync -avP %s %s" % (DOC_BUILD_PATH, SITE_PATH),
+            "echo %s > %s" % (SITE_URL, os.path.join(SITE_PATH, 'CNAME')),
+            "touch %s" % os.path.join(SITE_PATH, '.nojekyll'),
+            ],
+        'task_dep': ['website'],
+        }
+
 
 
 ################### dist
@@ -133,10 +150,12 @@ def task_manifest():
         # using a MANIFEST file directly is broken on python2.7
         # http://bugs.python.org/issue11104
         import sys
-        assert sys.version_info < (2,7)
+        assert sys.version_info < (2,7) or sys.version_info > (2,7,2)
 
-    cmd = "hg manifest > MANIFEST;echo 'revision.txt' >> MANIFEST"
-    return {'actions': [check_version, cmd]}
+    # create manifest will all files under version control without .hg* files
+    cmd = """hg manifest | grep -vE ".*\.hg.*" > MANIFEST """
+    cmd2 = "echo 'revision.txt' >> MANIFEST"
+    return {'actions': [check_version, cmd, cmd2]}
 
 def task_sdist():
     """create source dist package"""
@@ -153,4 +172,4 @@ def task_pypi():
 
 
 
-# sfood -i doit/ | sfood-graph | dot -Tpng -o doit-dep.png
+# doit -f ../doit-recipes/deps/deps.py -d . --reporter=executed-only

@@ -155,8 +155,8 @@ class TaskControl(object):
             elif filter_ in self.targets:
                 selected_task.append(self.targets[filter_])
             else:
-                msg = ('"%s" must be a sub-command, a task, or a target.\n' +
-                       'Type "doit help" to see available sub-commands.\n' +
+                msg = ('cmd `run` invalid parameter: "%s".' +
+                       'Must be a task, or a target.\n' +
                        'Type "doit list" to see available tasks')
                 raise InvalidCommand(msg % filter_)
         return selected_task
@@ -179,35 +179,61 @@ class TaskControl(object):
         assert self.selected_tasks is not None, \
             "must call 'process' before this"
 
-        disp = TaskDispatcher(self.tasks, self.targets, include_setup)
-        return disp.dispatcher_generator(self.selected_tasks)
+        return TaskDispatcher(self.tasks, self.targets, self.selected_tasks,
+                              include_setup)
 
 
 
 class ExecNode(object):
     """Each task will have an instace of this
     This used to keep track of waiting events and the generator for dep nodes
+
+    @ivar run_status (str): contains the result of Dependency.get_status
+            modified by runner, value can be:
+           - None: not processed yet
+           - run: task is selected to be executed (it might be running or
+                   waiting for setup)
+           - ignore: task wont be executed (user forced deselect)
+           - up-to-date: task wont be executed (no need)
+           - done: task finished its execution
     """
     def __init__(self, task, parent):
         self.task = task
-        # list of dependencies not processed by _add_task
+        # list of dependencies not processed by _add_task yet
         self.task_dep = task.task_dep[:]
         self.calc_dep = task.calc_dep.copy()
 
+        # ancestors are used to detect cyclic references.
+        # it does not contain a list of tasks that depends on this node
+        # for that check the attribute waiting_me
         self.ancestors = []
         if parent:
             self.ancestors.extend(parent.ancestors)
         self.ancestors.append(task.name)
+
+        # Wait for a task to be selected to its execution
+        # checking if it is up-to-date
+        self.wait_select = False
 
         # Wait for a task to finish its execution
         self.wait_run = set() # task names
         self.wait_run_calc = set() # task names
 
         self.waiting_me = set() # ExecNode
-        # Wait for a task to be selected to its execution
-        # checking if it is up-to-date
-        self.wait_select = False
+
+        self.run_status = None
+        # all ancestors that failed
+        self.bad_deps = []
+        self.ignored_deps = []
+
+        # generator from TaskDispatcher._add_task
         self.generator = None
+
+    def parent_status(self, parent_node):
+        if parent_node.run_status == 'failure':
+            self.bad_deps.append(parent_node)
+        elif parent_node.run_status == 'ignore':
+            self.ignored_deps.append(parent_node)
 
     def __repr__(self):
         return "%s(%s)" % (self.__class__.__name__, self.task.name)
@@ -230,13 +256,16 @@ def no_none(decorated):
     return _func
 
 
-# FIXME handle task.run_status = 'ignore'
+
 class TaskDispatcher(object):
     """Dispatch another task to be selected/executed, mostly handle with MP
 
     Note that a dispatched task might not be ready to be executed.
+
+    @ivar include_setup: (bool) when True tasks wont be execute so
+                         do not wait for task deps.
     """
-    def __init__(self, tasks, targets, include_setup=False):
+    def __init__(self, tasks, targets, selected_tasks, include_setup=False):
         self.tasks = tasks
         self.targets = targets
         self.include_setup = include_setup
@@ -245,6 +274,8 @@ class TaskDispatcher(object):
         # queues
         self.waiting = set() # of ExecNode
         self.ready = deque() # of ExecNode
+
+        self.generator = self._dispatcher_generator(selected_tasks)
 
 
     def _gen_node(self, parent, task_name):
@@ -266,9 +297,21 @@ class TaskDispatcher(object):
 
 
     def _node_add_wait_run(self, node, task_list, calc=False):
-        """updates node.wait_run"""
-        wait_for = set(n for n in task_list if self.tasks[n].run_status not in (
-                'done', 'up-to-date'))
+        """updates node.wait_run
+        @param node (ExecNode)
+        @param task_list (list - str) tasks that node should wait for
+        @param calc (bool) task_list is for calc_dep
+        """
+        # remove tasks that were already executed from task_list
+        wait_for = set()
+        for name in task_list:
+            dep_node = self.nodes[name]
+            if (not dep_node) or dep_node.run_status in (None, 'run'):
+                wait_for.add(name)
+            else:
+                node.parent_status(dep_node)
+
+        # update ExecNode setting parent/dependent relationship
         for name in wait_for:
             self.nodes[name].waiting_me.add(node)
         if calc:
@@ -282,7 +325,7 @@ class TaskDispatcher(object):
         """@return a generator that produces:
              - ExecNode for task dependencies
              - 'wait' to wait for an event (i.e. a dep task run)
-             - Task when ready to run (or be selected)
+             - Task when ready to be dispatched to runner (run or be selected)
              - None values are of no interest and are filtered out
                by the decorator no_none
 
@@ -292,7 +335,8 @@ class TaskDispatcher(object):
         """
         this_task = node.task
 
-        # add calc_dep & task_dep
+        # add calc_dep & task_dep until all processed
+        # calc_dep may add more deps so need to loop until nothing left
         while True:
             for calc_dep in node.calc_dep:
                 yield self._gen_node(node, calc_dep)
@@ -318,12 +362,12 @@ class TaskDispatcher(object):
             # run_status None means task is waiting for other tasks
             # in order to check if up-to-date. so it needs to wait
             # before scheduling its setup-tasks.
-            if this_task.run_status is None:
+            if node.run_status is None:
                 node.wait_select = True
                 yield "wait"
 
-            # this task should run, so schedule setup-tasks before itself
-            if this_task.run_status == 'run' or self.include_setup:
+            # if this task should run, so schedule setup-tasks before itself
+            if node.run_status == 'run' or self.include_setup:
                 for setup_task in this_task.setup_tasks:
                     yield self._gen_node(node, setup_task)
                 self._node_add_wait_run(node, this_task.setup_tasks)
@@ -335,9 +379,9 @@ class TaskDispatcher(object):
 
 
     def _get_next_node(self, ready, tasks_to_run):
-        """get node/task from (in order):
+        """get ExecNode from (in order):
             .1 ready
-            .2 to_run
+            .2 tasks_to_run (list in reverse order)
          """
         if ready:
             return ready.popleft()
@@ -351,13 +395,13 @@ class TaskDispatcher(object):
 
     def _update_waiting(self, processed):
         """updates 'ready' and 'waiting' queues after processed
-        @param processed (Task) or None
+        @param processed (ExecNode) or None
         """
         # no task processed, just ignore
         if processed is None:
             return
 
-        node = self.nodes[processed.name]
+        node = processed
 
         # if node was waiting select must only receive select event
         if node.wait_select:
@@ -366,11 +410,15 @@ class TaskDispatcher(object):
             node.wait_select = False
 
         # status == run means this was not just select completed
-        if node.task.run_status == 'run':
+        if node.run_status == 'run':
             return
 
         for waiting_node in node.waiting_me:
+            waiting_node.parent_status(node)
+
+            # is_ready indicates if node.generator can be invoked again
             task_name = node.task.name
+
             # node wait_run will be ready if there are nothing left to wait
             if task_name in waiting_node.wait_run:
                 waiting_node.wait_run.remove(task_name)
@@ -380,9 +428,11 @@ class TaskDispatcher(object):
             else:
                 assert task_name in waiting_node.wait_run_calc
                 waiting_node.wait_run_calc.remove(task_name)
+                # calc_dep might add new deps that can be run without
+                # waiting for the completion of the remaining deps
                 is_ready = True
 
-                # refresh this task dependencies
+                # refresh this task dependencies with values got from calc_dep
                 values = node.task.values
                 len_task_deps = len(node.task.task_dep)
                 old_calc_dep = node.task.calc_dep.copy()
@@ -403,8 +453,7 @@ class TaskDispatcher(object):
                 self.waiting.remove(waiting_node)
 
 
-
-    def dispatcher_generator(self, selected_tasks):
+    def _dispatcher_generator(self, selected_tasks):
         """return generator dispatching tasks"""
         # each selected task will create a tree (from dependencies) of
         # tasks to be processed
@@ -432,9 +481,9 @@ class TaskDispatcher(object):
                 node = None
                 continue
 
-            # got a task, send task to runner
+            # got a task, send ExecNode to runner
             if isinstance(next_step, Task):
-                processed = (yield next_step)
+                processed = (yield self.nodes[next_step.name])
                 self._update_waiting(processed)
 
             # got new ExecNode, add to ready_queue

@@ -33,7 +33,7 @@ Traditional build-tools were created mainly to deal with compile/link process of
  * Unlike other build-tools `doit` allows you to define how/when a task should be considered up-to-date (instead of just checking for changes in files).
 
 
-`doit`  was designed to be easy to use and “get out of your way”.
+`doit`  was designed to be easy to use and "get out of your way".
 
 
 `doit` can be used as
@@ -118,7 +118,7 @@ Project Details
 
 * Professional support and consulting services available from ``doit`` creator & maintainer (*schettino72* at gmail.com).
 
-* This web site is hosted on http://sourceforge.net.
+* This web site is hosted on http://pages.github.com
 
 * `doit-recipes <https://bitbucket.org/schettino72/doit-recipes/wiki/Home>`_ contains a collection of non-trivial examples and a list of projects using `doit`.
 
@@ -126,8 +126,8 @@ Project Details
 Status
 ======
 
-`doit` is under active development. Version 0.16 released on 2012-04.
+`doit` is under active development. Version 0.18 released on 2012-11.
 
-`doit` core features are quite stable. So if there is not recent development, it does NOT mean `doit` is not being maintained... Development is done based on real world use cases. If I don't need a feature and nobody never asked for it, it is not implemented ;) It is well designed and have a very small code base so adding new features isn't hard.
+`doit` core features are quite stable. So if there is no recent development, it does NOT mean `doit` is not being maintained... Development is done based on real world use cases. If I don't need a feature and nobody never asked for it, it is not implemented ;) It is well designed and have a very small code base so adding new features isn't hard.
 
 If you use `doit` please drop me a line telling me your experience...

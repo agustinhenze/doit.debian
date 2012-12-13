@@ -18,6 +18,8 @@ Contents:
    cmd_run
    cmd_other
    tools
+   extending
+   standalone
    faq
    changes
    related

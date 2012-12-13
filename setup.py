@@ -50,14 +50,16 @@ extra = {}
 if sys.version_info >= (3,0):
     extra.update(use_2to3=True)
 
+long_description = open('doc/index.rst', 'rb'
+                        ).read().decode('utf-8').split('Quick Start')[0]
 
 setup(name = 'doit',
       description = 'doit - Automation Tool',
-      version = '0.17.0',
+      version = '0.18.1',
       license = 'MIT',
       author = 'Eduardo Naufel Schettino',
       author_email = 'schettino72@gmail.com',
-      url = 'http://python-doit.sourceforge.net/',
+      url = 'http://pydoit.org',
       classifiers = ['Development Status :: 5 - Production/Stable',
                      'Environment :: Console',
                      'License :: OSI Approved :: MIT License',
@@ -70,6 +72,7 @@ setup(name = 'doit',
                      'Programming Language :: Python :: 2.7',
                      'Programming Language :: Python :: 3',
                      'Programming Language :: Python :: 3.2',
+                     'Programming Language :: Python :: 3.3',
                      'Intended Audience :: Developers',
                      'Intended Audience :: Information Technology',
                      'Intended Audience :: Science/Research',
@@ -84,8 +87,7 @@ setup(name = 'doit',
       scripts = scripts,
       cmdclass = {'test': PyTest},
       install_requires = install_requires,
-      long_description = open('doc/index.rst', 'rb'
-                              ).read().decode('utf-8').split('Quick Start')[0],
+      long_description = long_description,
       **extra
       )
 
