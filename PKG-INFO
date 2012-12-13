@@ -1,8 +1,8 @@
-Metadata-Version: 1.0
+Metadata-Version: 1.1
 Name: doit
-Version: 0.17.0
+Version: 0.18.1
 Summary: doit - Automation Tool
-Home-page: http://python-doit.sourceforge.net/
+Home-page: http://pydoit.org
 Author: Eduardo Naufel Schettino
 Author-email: schettino72@gmail.com
 License: MIT
@@ -41,7 +41,7 @@ Description: About
          * Unlike other build-tools `doit` allows you to define how/when a task should be considered up-to-date (instead of just checking for changes in files).
         
         
-        `doit`  was designed to be easy to use and “get out of your way”.
+        `doit`  was designed to be easy to use and "get out of your way".
         
         
         `doit` can be used as
@@ -98,6 +98,7 @@ Classifier: Programming Language :: Python :: 2.6
 Classifier: Programming Language :: Python :: 2.7
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.2
+Classifier: Programming Language :: Python :: 3.3
 Classifier: Intended Audience :: Developers
 Classifier: Intended Audience :: Information Technology
 Classifier: Intended Audience :: Science/Research

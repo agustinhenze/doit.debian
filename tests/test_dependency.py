@@ -9,11 +9,7 @@ import pytest
 from doit.task import Task
 from doit.dependency import get_md5, md5sum, check_modified, UptodateCalculator
 from doit.dependency import JsonDependency, DbmDependency, DbmDB
-
-
-def get_abspath(relativePath):
-    """ return abs file path relative to this file"""
-    return os.path.join(os.path.dirname(__file__), relativePath)
+from .conftest import get_abspath, depfile
 
 
 def test_unicode_md5():
@@ -45,41 +41,21 @@ def test_md5():
 # taskId is md5(CmdTask.task)
 
 
-# fixture to create a sample file to be used as file_dep
-def pytest_funcarg__dependency(request):
-    def create_dependency():
-        path = get_abspath("data/dependency1")
-        if os.path.exists(path): os.remove(path)
-        ff = open(path, "w")
-        ff.write("whatever")
-        ff.close()
-        return path
-    def remove_dependency(path):
-        if os.path.exists(path):
-            os.remove(path)
-    return request.cached_setup(
-        setup=create_dependency,
-        teardown=remove_dependency,
-        scope="function")
+
+# test parametrization, execute tests for all DB backends
+BACKENDS = [JsonDependency]
+# gdbm is broken on python2.5
+import platform
+python_version = platform.python_version().split('.')
+if python_version[0] != '2' or python_version[1] != '5':
+    BACKENDS.append(DbmDependency)
+pytest.fixture(params=BACKENDS)(depfile)
 
 
 # FIXME there was major refactor breaking classes from dependency,
 # unit-tests could be more specific to base classes.
 
-# test parametrization, execute tests for all DB backends
-def pytest_generate_tests(metafunc):
-    if "depfile" in metafunc.funcargnames:
-        metafunc.addcall(id='JsonDependency', param=JsonDependency)
-        # gdbm is broken on python2.5
-        import platform
-        python_version = platform.python_version().split('.')
-        if python_version[0] != '2' or python_version[1] != '5':
-            metafunc.addcall(id='DbmDependency', param=DbmDependency)
-
-
-
 class TestDependencyDb(object):
-
     # adding a new value to the DB
     def test_get_set(self, depfile):
         depfile._set("taskId_X","dependency_A","da_md5")
@@ -94,13 +70,20 @@ class TestDependencyDb(object):
 
         # open it again and check the value
         d2 = depfile.__class__(depfile.name)
+
         value = d2._get("taskId_X","dependency_A")
         assert "da_md5" == value, value
 
     def test_corrupted_file(self, depfile):
-        fd = open(depfile.name, 'w')
-        fd.write("""{"x": y}""")
-        fd.close()
+        if depfile.__class__==DbmDependency and depfile.whichdb is None: # pragma: no cover
+            pytest.skip('dumbdbm too dumb to detect db corruption')
+
+        # create some corrupted files
+        for name_ext in depfile.name_ext:
+            full_name = depfile.name + name_ext
+            fd = open(full_name, 'w')
+            fd.write("""{"x": y}""")
+            fd.close()
         if isinstance(anydbm.error, Exception): # pragma: no cover
             exceptions = (ValueError, anydbm.error)
         else:
@@ -109,10 +92,16 @@ class TestDependencyDb(object):
 
     def test_corrupted_file_unrecognized_excep(self, monkeypatch, depfile):
         if isinstance(depfile, JsonDependency):
-            return # this is specific to DbmDependency
-        fd = open(depfile.name, 'w')
-        fd.write("""{"x": y}""")
-        fd.close()
+            pytest.skip('test doesnt apply to JsonDependency')
+        if depfile.whichdb is None: # pragma: no cover
+            pytest.skip('dumbdbm too dumb to detect db corruption')
+
+        # create some corrupted files
+        for name_ext in depfile.name_ext:
+            full_name = depfile.name + name_ext
+            fd = open(full_name, 'w')
+            fd.write("""{"x": y}""")
+            fd.close()
         monkeypatch.setattr(DbmDB, 'DBM_CONTENT_ERROR_MSG', 'xxx')
         pytest.raises(anydbm.error, depfile.__class__, depfile.name)
 
@@ -284,25 +273,25 @@ class TestIgnore(object):
 
 
 class TestCheckModified(object):
-    def test_None(self, dependency):
-        assert check_modified(dependency, os.stat(dependency),  None)
+    def test_None(self, dependency1):
+        assert check_modified(dependency1, os.stat(dependency1),  None)
 
-    def test_timestamp(self, dependency):
-        timestamp = os.path.getmtime(dependency)
-        dep_stat = os.stat(dependency)
-        assert not check_modified(dependency, dep_stat, (timestamp, 0, ''))
-        assert check_modified(dependency, dep_stat, (timestamp+1, 0, ''))
+    def test_timestamp(self, dependency1):
+        timestamp = os.path.getmtime(dependency1)
+        dep_stat = os.stat(dependency1)
+        assert not check_modified(dependency1, dep_stat, (timestamp, 0, ''))
+        assert check_modified(dependency1, dep_stat, (timestamp+1, 0, ''))
 
-    def test_size_md5(self, dependency):
-        timestamp = os.path.getmtime(dependency)
-        size = os.path.getsize(dependency)
-        md5 = md5sum(dependency)
-        dep_stat = os.stat(dependency)
+    def test_size_md5(self, dependency1):
+        timestamp = os.path.getmtime(dependency1)
+        size = os.path.getsize(dependency1)
+        md5 = md5sum(dependency1)
+        dep_stat = os.stat(dependency1)
         # incorrect size dont check md5
-        assert check_modified(dependency, dep_stat, (timestamp+1, size+1, ''))
+        assert check_modified(dependency1, dep_stat, (timestamp+1, size+1, ''))
         # correct size check md5
-        assert not check_modified(dependency, dep_stat, (timestamp+1, size, md5))
-        assert check_modified(dependency, dep_stat, (timestamp+1, size, ''))
+        assert not check_modified(dependency1, dep_stat, (timestamp+1, size, md5))
+        assert check_modified(dependency1, dep_stat, (timestamp+1, size, ''))
 
 
 
@@ -311,12 +300,10 @@ class TestGetStatus(object):
     def test_ignore(self, depfile):
         t1 = Task("t1", None)
         # before ignore
-        assert 'run' == depfile.get_status(t1, {})
-        assert [] == t1.dep_changed
+        assert not depfile.status_is_ignore(t1)
         # after ignote
         depfile.ignore(t1)
-        assert 'ignore' == depfile.get_status(t1, {})
-        assert [] == t1.dep_changed
+        assert depfile.status_is_ignore(t1)
 
 
     def test_fileDependencies(self, depfile):
@@ -446,24 +433,24 @@ class TestGetStatus(object):
 
 
     # if target file does not exist, task is outdated.
-    def test_targets_notThere(self, depfile, dependency):
+    def test_targets_notThere(self, depfile, dependency1):
         target = get_abspath("data/target")
         if os.path.exists(target):
             os.remove(target)
 
-        t1 = Task("task x", None, [dependency], [target])
+        t1 = Task("task x", None, [dependency1], [target])
         depfile.save_success(t1)
         assert 'run' == depfile.get_status(t1, {})
-        assert [dependency] == t1.dep_changed
+        assert [dependency1] == t1.dep_changed
 
 
-    def test_targets(self, depfile, dependency):
+    def test_targets(self, depfile, dependency1):
         filePath = get_abspath("data/target")
         ff = open(filePath,"w")
         ff.write("part1")
         ff.close()
 
-        deps = [dependency]
+        deps = [dependency1]
         targets = [filePath]
         t1 = Task("task X", None, deps, targets)
 
@@ -473,9 +460,9 @@ class TestGetStatus(object):
         assert [] == t1.dep_changed
 
 
-    def test_targetFolder(self, depfile, dependency):
+    def test_targetFolder(self, depfile, dependency1):
         # folder not there. task is not up-to-date
-        deps = [dependency]
+        deps = [dependency1]
         folderPath = get_abspath("data/target-folder")
         if os.path.exists(folderPath):
             os.rmdir(folderPath)

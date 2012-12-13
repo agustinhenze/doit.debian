@@ -2,7 +2,7 @@
 """
 
 import subprocess, sys
-import StringIO
+import StringIO as io
 import inspect
 from threading import Thread
 
@@ -62,7 +62,10 @@ class CmdAction(BaseAction):
             if line:
                 capture.write(line)
                 if realtime:
-                    realtime.write(line.encode(encoding))
+                    if sys.version > '3':
+                        realtime.write(line)
+                    else:
+                        realtime.write(line.encode(encoding))
             if not line and process.poll() != None:
                 break
 
@@ -88,8 +91,8 @@ class CmdAction(BaseAction):
         process = subprocess.Popen(action, shell=True,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        output = StringIO.StringIO()
-        errput = StringIO.StringIO()
+        output = io.StringIO()
+        errput = io.StringIO()
         t_out = Thread(target=self._print_process_output,
                        args=(process, process.stdout, output, out))
         t_err = Thread(target=self._print_process_output,
@@ -196,6 +199,12 @@ class PythonAction(BaseAction):
         if not hasattr(self.py_callable, '__call__'):
             msg = "%r PythonAction must be a 'callable' got %r."
             raise InvalidTask(msg % (self.task, self.py_callable))
+        if inspect.isclass(self.py_callable):
+            msg = "%r PythonAction can not be a class got %r."
+            raise InvalidTask(msg % (self.task, self.py_callable))
+        if inspect.isbuiltin(self.py_callable):
+            msg = "%r PythonAction can not be a built-in got %r."
+            raise InvalidTask(msg % (self.task, self.py_callable))
         if type(self.args) is not tuple and type(self.args) is not list:
             msg = "%r args must be a 'tuple' or a 'list'. got '%s'."
             raise InvalidTask(msg % (self.task, self.args))
@@ -218,7 +227,10 @@ class PythonAction(BaseAction):
         if not self.task:
             return self.kwargs
 
-        argspec = inspect.getargspec(self.py_callable)
+        try:
+            argspec = inspect.getargspec(self.py_callable)
+        except TypeError:
+            argspec = inspect.getargspec(self.py_callable.__call__)
         # named tuples only from python 2.6 :(
         argspec_args = argspec[0]
         argspec_keywords = argspec[2]
@@ -270,9 +282,9 @@ class PythonAction(BaseAction):
         """
         # set std stream
         old_stdout = sys.stdout
-        output = StringIO.StringIO()
+        output = io.StringIO()
         old_stderr = sys.stderr
-        errput = StringIO.StringIO()
+        errput = io.StringIO()
 
         out_list = [output]
         if out:

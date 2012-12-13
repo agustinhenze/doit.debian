@@ -16,15 +16,12 @@ TEST_PATH = os.path.dirname(__file__)
 PROGRAM = "python %s/sample_process.py" % TEST_PATH
 
 
-def create_tempfile():
-    return tempfile.TemporaryFile('w+b')
+@pytest.fixture
+def tmpfile(request):
+    temp = tempfile.TemporaryFile('w+')
+    request.addfinalizer(temp.close)
+    return temp
 
-def pytest_funcarg__tmpfile(request):
-    """crate a temporary file"""
-    return request.cached_setup(
-        setup=create_tempfile,
-        teardown=(lambda tmpfile: tmpfile.close()),
-        scope="function")
 
 class FakeTask(object):
     def __init__(self, file_dep, dep_changed, targets, options):
@@ -109,7 +106,7 @@ class TestCmdVerbosity(object):
         action_result = my_action.execute(err=tmpfile)
         assert isinstance(action_result, TaskFailed)
         tmpfile.seek(0)
-        got = tmpfile.read().decode('utf-8')
+        got = tmpfile.read()
         assert "err output on failure" == got, repr(got)
         assert "err output on failure" == my_action.err, repr(my_action.err)
 
@@ -118,7 +115,7 @@ class TestCmdVerbosity(object):
         my_action = action.CmdAction("%s hi_stdout hi2" % PROGRAM)
         my_action.execute(out=tmpfile)
         tmpfile.seek(0)
-        got = tmpfile.read().decode('utf-8')
+        got = tmpfile.read()
         assert "hi_stdout" == got, repr(got)
         assert "hi_stdout" == my_action.out, repr(my_action.out)
 
@@ -160,7 +157,7 @@ class TestCmd_print_process_output(object):
 
     def test_unicode_string(self, tmpfile):
         my_action = action.CmdAction("")
-        unicode_in = create_tempfile()
+        unicode_in = tempfile.TemporaryFile('w+b')
         unicode_in.write(u" 中文".encode('utf-8'))
         unicode_in.seek(0)
         my_action._print_process_output(Mock(), unicode_in, Mock(), tmpfile)
@@ -168,7 +165,7 @@ class TestCmd_print_process_output(object):
     def test_unicode_string2(self, tmpfile):
         # this \uXXXX has a different behavior!
         my_action = action.CmdAction("")
-        unicode_in = create_tempfile()
+        unicode_in = tempfile.TemporaryFile('w+b')
         unicode_in.write(u" 中文 \u2018".encode('utf-8'))
         unicode_in.seek(0)
         my_action._print_process_output(Mock(), unicode_in, Mock(), tmpfile)
@@ -234,7 +231,7 @@ class TestPythonAction(object):
         assert isinstance(got, TaskFailed)
 
     # any callable should work, not only functions
-    def test_nonFunction(self):
+    def test_callable_obj(self):
         class CallMe:
             def __call__(self):
                 return False
@@ -242,6 +239,7 @@ class TestPythonAction(object):
         my_action = action.PythonAction(CallMe())
         got = my_action.execute()
         assert isinstance(got, TaskFailed)
+
 
     # helper to test callable with parameters
     def _func_par(self,par1,par2,par3=5):
@@ -265,6 +263,15 @@ class TestPythonAction(object):
         pytest.raises(action.InvalidTask, action.PythonAction,
                       self._func_par, None, "a")
 
+    # cant use a class as callable
+    def test_init_callable_class(self):
+        class CallMe(object):
+            pass
+        pytest.raises(action.InvalidTask, action.PythonAction, CallMe)
+
+    # cant use built-ins
+    def test_init_callable_builtin(self):
+        pytest.raises(action.InvalidTask, action.PythonAction, any)
 
     def test_functionParametersArgs(self):
         my_action = action.PythonAction(self._func_par,args=(2,2,25))
@@ -374,13 +381,9 @@ class TestPythonVerbosity(object):
 
 class TestPythonActionPrepareKwargsMeta(object):
 
-    def pytest_funcarg__task_depchanged(self, request):
-        def create_task_depchanged():
-            task = FakeTask(['dependencies'],['changed'],['targets'],{})
-            return task
-        return request.cached_setup(
-            setup=create_task_depchanged,
-            scope="function")
+    @pytest.fixture
+    def task_depchanged(self, request):
+        return FakeTask(['dependencies'],['changed'],['targets'],{})
 
     def test_no_extra_args(self, task_depchanged):
         def py_callable():
@@ -446,6 +449,32 @@ class TestPythonActionPrepareKwargsMeta(object):
         my_action = action.PythonAction(py_callable, ('a', 'b'),
                                         task=task_depchanged)
         pytest.raises(action.InvalidTask, my_action.execute)
+
+    def test_callable_obj(self, task_depchanged):
+        got = []
+        class CallMe(object):
+            def __call__(self, a, b, changed):
+                got.append(a)
+                got.append(b)
+                got.append(changed)
+        my_action = action.PythonAction(CallMe(), ('a', 'b'),
+                                        task=task_depchanged)
+        my_action.execute()
+        assert got == ['a', 'b', ['changed']]
+
+    def test_method(self, task_depchanged):
+        got = []
+        class CallMe(object):
+            def xxx(self, a, b, changed):
+                got.append(a)
+                got.append(b)
+                got.append(changed)
+        my_action = action.PythonAction(CallMe().xxx, ('a', 'b'),
+                                        task=task_depchanged)
+        my_action.execute()
+        assert got == ['a', 'b', ['changed']]
+
+
 
 class TestPythonActionOptions(object):
     def test_task_options(self):

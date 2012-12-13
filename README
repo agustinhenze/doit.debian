@@ -9,14 +9,14 @@ doit - automation tool
 `doit` comes from the idea of bringing the power of build-tools to
 execute any kind of task
 
-see doc/index.rst or `website <http://python-doit.sourceforge.net/>`
+see doc/index.rst or `website <http://pydoit.org>`_
 
 
 Project Details
 ===============
 
  - Project management on `bitbucket <https://bitbucket.org/schettino72/doit>`_
- - Website http://python-doit.sourceforge.net/
+ - Website http://pydoit.org
  - `Discussion group <http://groups.google.co.in/group/python-doit>`_
 
 
@@ -38,7 +38,7 @@ see AUTHORS file
 install
 =======
 
-doit is tested on python 2.5, 2.6, 2.7, 3.2.
+doit is tested on python 2.5, 2.6, 2.7, 3.2, 3.3.
 
 ``python setup.py install``
 
@@ -94,11 +94,20 @@ from `dev_requirements.txt`::
 documentation
 =============
 
-``doc`` folder contains ReST documentation. They are the base for creating the website.
+``doc`` folder contains ReST documentation based on Sphinx.
+
+``doit/doc$ make html``
+
+They are the base for creating the website. The only difference is
+that the website includes analytics tracking using Pwiki.
 To create it (after installing doit):
 
 ``doit website``
 
-It includes epydoc generated API documentation.
+The website will also includes epydoc generated API documentation.
 
 
+continuous integration
+==========================
+
+`travis <https://travis-ci.org/schettino72/doit>`_
