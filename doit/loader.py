@@ -4,7 +4,6 @@ import os
 import sys
 import inspect
 
-from .compat import isgenerator
 from .exceptions import InvalidTask, InvalidCommand, InvalidDodoFile
 from .task import Task, dict_to_task
 
@@ -19,12 +18,8 @@ def flat_generator(gen, gen_doc=''):
     if any generator yields another generator it is recursivelly called
     """
     for item in gen:
-        if isgenerator(item):
-            if hasattr(item, 'gi_code'):
-                item_doc = item.gi_code.co_consts[0]
-            else: # pragma: nocover
-                # python2.5 does not have gi_code on generators
-                item_doc = gen_doc
+        if inspect.isgenerator(item):
+            item_doc = item.gi_code.co_consts[0]
             for value, value_doc in flat_generator(item, item_doc):
                 yield value, value_doc
         else:
@@ -106,13 +101,15 @@ def load_tasks(dodo_module, command_names=()):
     prefix_len = len(TASK_STRING)
     # get all functions defined in the module
     for name, ref in dodo_module.iteritems():
-        if not inspect.isfunction(ref):
-            continue
         # ignore functions that are not a task (by its name)
-        if not name.startswith(TASK_STRING):
+        if inspect.isfunction(ref) and name.startswith(TASK_STRING):
+            # remove TASK_STRING prefix from name
+            task_name = name[prefix_len:]
+        elif hasattr(ref, 'create_doit_tasks'):
+            ref = ref.create_doit_tasks
+            task_name = name
+        elif True: # coverage can't get "else: continue"
             continue
-        # remove TASK_STRING prefix from name
-        task_name = name[prefix_len:]
         # tasks cant have name of commands
         if task_name in command_names:
             msg = ("Task can't be called '%s' because this is a command name."+
@@ -220,7 +217,7 @@ def generate_tasks(func_name, gen_result, gen_doc=None):
         return [_generate_task_from_return(func_name, gen_result, gen_doc)]
 
     # a generator
-    if isgenerator(gen_result):
+    if inspect.isgenerator(gen_result):
         tasks = {} # task_name: task
         # the generator return subtasks as dictionaries
         for task_dict, x_doc in flat_generator(gen_result, gen_doc):
@@ -232,6 +229,9 @@ def generate_tasks(func_name, gen_result, gen_doc=None):
             # special case task_generator did not generate any task
             # create an empty group task
             return [Task(func_name, None, doc=gen_doc, has_subtask=True)]
+
+    if gen_result is None:
+        return ()
 
     raise InvalidTask(
         "Task '%s'. Must return a dictionary or generator. Got %s" %
