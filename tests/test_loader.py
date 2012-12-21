@@ -1,26 +1,11 @@
 import os
-import sys
 
 import pytest
 
 from doit.exceptions import InvalidDodoFile, InvalidCommand
 from doit.task import InvalidTask, Task
-from doit.loader import isgenerator, flat_generator, get_module
+from doit.loader import flat_generator, get_module
 from doit.loader import load_tasks, load_doit_config, generate_tasks
-
-
-class TestIsGenerator(object):
-    def testIsGeneratorYes(self):
-        def giveme(): # pragma: no cover
-            for i in range(3):
-                yield i
-        g = giveme()
-        assert isgenerator(g)
-
-    def testIsGeneratorNo(self):
-        def giveme():
-            return 5
-        assert not isgenerator(giveme())
 
 
 class TestFlatGenerator(object):
@@ -106,6 +91,15 @@ class TestLoadTasks(object):
         task_list = load_tasks(dodo)
         assert "task doc" == task_list[0].doc
 
+    def testUse_create_doit_tasks(self):
+        def original(): pass
+        def creator():
+            return {'actions': ['do nothing'], 'file_dep': ['foox']}
+        original.create_doit_tasks = creator
+        task_list = load_tasks({'x': original})
+        assert 1 == len(task_list)
+        assert set(['foox']) == task_list[0].file_dep
+
 
 class TestDodoConfig(object):
 
@@ -125,6 +119,11 @@ class TestDodoConfig(object):
 class TestGenerateTaskInvalid(object):
     def testInvalidValue(self):
         pytest.raises(InvalidTask, generate_tasks, "dict",'xpto 14')
+
+class TestGenerateTaskNone(object):
+    def testEmpty(self):
+        tasks = generate_tasks('xx', None)
+        assert len(tasks) == 0
 
 
 class TestGenerateTasksDict(object):
@@ -184,8 +183,7 @@ class TestGenerateTasksGenerator(object):
         assert isinstance(tasks[0], Task)
         assert 7 == len(tasks)
         assert not tasks[0].is_subtask
-        if sys.version_info >= (2, 6): # not possible on python2.5
-            assert f_xpto.__doc__ == tasks[0].doc
+        assert f_xpto.__doc__ == tasks[0].doc
         assert tasks[1].is_subtask
         assert "xpto:0-0" == tasks[1].name
         assert "xpto:1-2" == tasks[-1].name
