@@ -4,11 +4,11 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-PYVERS :=  $(shell pyversions -s)
-#PY3VERS := $(shell py3versions -s)
+PYVERS :=  python2.7
+PY3VERS := $(shell py3versions -s)
 
 %:
-	dh $@ --with python2 #,python3
+	dh $@ --with python2,python3
 
 override_dh_auto_build:
 
@@ -16,11 +16,12 @@ override_dh_auto_clean:
 	dh_auto_clean -- --all
 	rm -rf build
 	rm -rf doc/_build
-	rm -f .hgignore
-	rm -f .hgtags
+	rm -rf doit.egg-info
+	rm -f debian/doit.1
+	rm -f debian/doit3.1
 
 override_dh_auto_install:
-	dh_auto_install
+	rm -rf __pycache__
 	dh_bash-completion
 	set -ex; \
 	for py in $(PYVERS); do \
@@ -32,12 +33,16 @@ override_dh_auto_install:
 		$$py setup.py install --root debian/python3-doit \
 				      --install-layout=deb; \
 	done
+	mv debian/python3-doit/usr/bin/doit debian/python3-doit/usr/bin/doit3
 	# Doc
 	set -ex; \
 		cd doc; \
 		make html; \
 		cd -;
-	rm doc/_build/html/_static/underscore.js
-	rm doc/_build/html/_static/jquery.js
-	sed 's@_static/jquery.js@/usr/share/javascript/jquery/jquery.js@g' -i doc/_build/html/*.html
-	sed 's@_static/underscore.js@/usr/share/javascript/underscore/underscore.js@g' -i doc/_build/html/*.html
+	rm -f doc/_build/html/_static/underscore.js
+	rm -f doc/_build/html/_static/jquery.js
+	rm -f doc/_build/html/_static/doctools.js
+	rm -f doc/_build/html/_static/searchtools.js
+	rm -f doc/_build/html/_static/sidebar.js
+	rst2man debian/doit.rst debian/doit.1
+	rst2man debian/doit.rst debian/doit3.1

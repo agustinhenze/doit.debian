@@ -1,3 +1,11 @@
+doit (0.19.0-1) unstable; urgency=low
+
+  * New upstream release
+    - Adds support for python3.
+    - Update standard version from 3.9.3 to 3.9.4.
+
+ -- Agustin Henze <tin@sluc.org.ar>  Fri, 21 Dec 2012 19:47:27 -0300
+
 doit (0.17.0-2) unstable; urgency=low
 
   * Workaround a debhelper rewrite so we leave the version dependency up to
