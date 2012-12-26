@@ -11,6 +11,8 @@ PY3VERS := $(shell py3versions -s)
 	dh $@ --with python2,python3
 
 override_dh_auto_build:
+	cp bash_completion_doit debian/bash_completion_doit3
+	sed -i 's@doit@doit3@g' debian/bash_completion_doit3
 
 override_dh_auto_clean:
 	dh_auto_clean -- --all
@@ -19,6 +21,7 @@ override_dh_auto_clean:
 	rm -rf doit.egg-info
 	rm -f debian/doit.1
 	rm -f debian/doit3.1
+	rm -f debian/bash_completion_doit3
 
 override_dh_auto_install:
 	rm -rf __pycache__
@@ -45,4 +48,4 @@ override_dh_auto_install:
 	rm -f doc/_build/html/_static/searchtools.js
 	rm -f doc/_build/html/_static/sidebar.js
 	rst2man debian/doit.rst debian/doit.1
-	rst2man debian/doit.rst debian/doit3.1
+	rst2man debian/doit3.rst debian/doit3.1
