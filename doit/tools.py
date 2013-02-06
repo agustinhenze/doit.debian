@@ -215,7 +215,7 @@ class check_timestamp_unchanged(object):
         return self._cmp_op(prev_time, current_time)
 
 
-# action
+# action class
 class InteractiveAction(CmdAction):
     """Action to handle Interactive shell process:
         * the output is never captured
@@ -231,7 +231,7 @@ class InteractiveAction(CmdAction):
             pass # normal way to stop interactive process
 
 
-# action
+# action class
 class PythonInteractiveAction(PythonAction):
     """Action to handle Interactive python:
         * the output is never captured

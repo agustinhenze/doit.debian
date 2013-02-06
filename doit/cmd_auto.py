@@ -1,30 +1,15 @@
-import sys
-import itertools
+"""starts a long-running process that whatches the file system and
+automatically execute tasks when file dependencies change"""
 
-from .control import TaskControl
+import os
+import time
+import sys
+from multiprocessing import Process
+
+from .cmdparse import CmdParse
 from .filewatch import FileModifyWatcher
 from .cmd_base import DoitCmdBase
 from .cmd_run import opt_verbosity, Run
-
-
-def _auto_watch(task_list, filter_tasks):
-    """return list of tasks and files that need to be watched by auto cmd"""
-    this_list = [t.clone() for t in task_list]
-    task_control = TaskControl(this_list)
-    task_control.process(filter_tasks)
-    # remove duplicates preserving order
-    task_set = set()
-    tasks_to_run = []
-    for node in task_control.task_dispatcher(True).generator:
-        dis = node.task
-        if dis.name not in task_set:
-            tasks_to_run.append(dis)
-            task_set.add(dis.name)
-    watch_tasks = [t.name for t in tasks_to_run]
-    watch_files = list(itertools.chain(*[s.file_dep for s in tasks_to_run]))
-    watch_files = list(set(watch_files))
-    return watch_tasks, watch_files
-
 
 opt_reporter = {'name':'reporter',
                  'short': None,
@@ -35,31 +20,88 @@ opt_reporter = {'name':'reporter',
 
 
 class Auto(DoitCmdBase):
+    """the main process will never load tasks,
+    delegates execution to a forked process.
+
+    python caches imported modules,
+    but using different process we can have dependencies on python
+    modules making sure the newest module will be used.
+    """
+
     doc_purpose = "automatically execute tasks when a dependency changes"
     doc_usage = "[TASK ...]"
     doc_description = None
 
     cmd_options = (opt_verbosity, opt_reporter)
 
-    loop_callback = None # used to stop loop on unittests
-    def _execute(self, verbosity=None, reporter='executed-only'):
-        """Re-execute tasks automatically a depedency changes
-
-        @param filter_tasks (list -str): print only tasks from this list
+    @staticmethod
+    def _find_file_deps(tasks, sel_tasks):
+        """find all file deps
+        @param tasks (dict)
+        @param sel_tasks(list - str)
         """
-        watch_tasks, watch_files = _auto_watch(self.task_list, self.sel_tasks)
-        auto_cmd = self
-        class DoitAutoRun(FileModifyWatcher):
-            """Execute doit on event handler of file changes """
-            def handle_event(self, event):
-                this_list = [t.clone() for t in auto_cmd.task_list]
-                cmd_run = Run(dep_file=auto_cmd.dep_file, task_list=this_list,
-                              sel_tasks=watch_tasks)
-                cmd_run._execute(sys.stdout, verbosity=verbosity,
-                                 reporter=reporter)
+        deps = set()
+        processed = set() # str - task name
+        to_process = set(sel_tasks) # str - task name
+        # get initial task
+        while to_process:
+            task = tasks.get(to_process.pop())
+            processed.add(task.name)
+            for task_dep in task.task_dep + task.setup_tasks:
+                if (task_dep not in processed) and (task_dep not in to_process):
+                    to_process.add(task_dep)
+            deps.update(task.file_dep)
+        return deps
 
-        file_watcher = DoitAutoRun(watch_files)
-        # always run once when started
-        file_watcher.handle_event(None)
-        file_watcher.loop(self.loop_callback)
 
+    @staticmethod
+    def _dep_changed(watch_files, started, targets):
+        """check if watched files was modified since execution started"""
+        for watched in watch_files:
+            # assume that changes to targets were done by doit itself
+            if watched in targets:
+                continue
+            if os.stat(watched).st_mtime > started:
+                return True
+        return False
+
+
+    def run_watch(self, params, args):
+        """Run tasks and wait for file system event
+
+        This method is executed in a forked process.
+        The process is terminated after a single event.
+        """
+        started = time.time()
+
+        # execute tasks using Run Command
+        ar = Run(task_loader=self._loader)
+        params.add_defaults(CmdParse(ar.options).parse([])[0])
+        result = ar.execute(params, args)
+
+        # get list of files to watch on file system
+        watch_files = self._find_file_deps(ar.control.tasks,
+                                           ar.control.selected_tasks)
+
+        # Check for timestamp changes since run started,
+        # if change, restart straight away
+        if not self._dep_changed(watch_files, started, ar.control.targets):
+            # set event handler. just terminate process.
+            class DoitAutoRun(FileModifyWatcher):
+                def handle_event(self, event):
+                    #print "FS EVENT -> ", event
+                    sys.exit(result)
+            file_watcher = DoitAutoRun(watch_files)
+            # kick start watching process
+            file_watcher.loop()
+
+
+    def execute(self, params, args):
+        """loop executing tasks until process is interrupted"""
+        while True:
+            try:
+                p = Process(target=self.run_watch, args=(params, args))
+                p.start()
+                p.join()
+            except KeyboardInterrupt:
+                return 0

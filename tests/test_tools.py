@@ -304,5 +304,3 @@ class TestPythonInteractiveAction(object):
         my_action = tools.PythonInteractiveAction(raise_x)
         got = my_action.execute()
         assert isinstance(got, exceptions.TaskError)
-
-

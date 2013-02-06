@@ -9,6 +9,14 @@ from threading import Thread
 from .exceptions import InvalidTask, TaskFailed, TaskError
 
 
+def normalize_callable(ref):
+    """return a list with (callabe, *args, **kwargs)
+    ref can be a simple callable or a tuple
+    """
+    if isinstance(ref, tuple):
+        return list(ref)
+    return [ref, (), {}]
+
 # Actions
 class BaseAction(object):
     """Base class for all actions"""
@@ -16,7 +24,61 @@ class BaseAction(object):
     # must implement:
     # def execute(self, out=None, err=None)
 
-    pass
+    @staticmethod
+    def _prepare_kwargs(task, func, args, kwargs):
+        """
+        Prepare keyword arguments (targets, dependencies, changed,
+        cmd line options)
+        Inspect python callable and add missing arguments:
+        - that the callable expects
+        - have not been passed (as a regular arg or as keyword arg)
+        - are available internally through the task object
+        """
+        # Return just what was passed in task generator
+        # dictionary if the task isn't available
+        if not task:
+            return kwargs
+
+        try:
+            argspec = inspect.getargspec(func)
+        except TypeError:
+            argspec = inspect.getargspec(func.__call__)
+        # named tuples only from python 2.6 :(
+        argspec_args = argspec[0]
+        argspec_keywords = argspec[2]
+        argspec_defaults = argspec[3]
+        # use task meta information as extra_args
+        extra_args = {'targets': task.targets,
+                      'dependencies': task.file_dep,
+                      'changed': task.dep_changed}
+
+        # tasks parameter options
+        extra_args.update(task.options)
+        kwargs = kwargs.copy()
+
+        for key in extra_args.keys():
+            # check key is a positional parameter
+            if key in argspec_args:
+                arg_pos = argspec_args.index(key)
+
+                # it is forbidden to use default values for this arguments
+                # because the user might be unware of this magic.
+                if (argspec_defaults and
+                    len(argspec_defaults) > (len(argspec_args) - (arg_pos+1))):
+                    msg = ("%s.%s: '%s' argument default value not allowed "
+                           "(reserved by doit)"
+                           % (task.name, func.__name__, key))
+                    raise InvalidTask(msg)
+
+                # if not over-written by value passed in *args use extra_arg
+                overwritten = arg_pos < len(args)
+                if not overwritten:
+                    kwargs[key] = extra_args[key]
+
+            # if function has **kwargs include extra_arg on it
+            elif argspec_keywords and key not in kwargs:
+                kwargs[key] = extra_args[key]
+        return kwargs
 
 
 
@@ -28,16 +90,26 @@ class CmdAction(BaseAction):
          It may contain python mapping strings with the keys: dependencies,
          changed and targets. ie. "zip %(targets)s %(changed)s"
     @ivar task(Task): reference to task that contains this action
+    @ivar save_out: (str) name used to save output in `values`
     """
 
-    def __init__(self, action, task=None): #pylint: disable=W0231
-        assert isinstance(action, basestring), "CmdAction must be a string."
-        self.action = action
+    def __init__(self, action, task=None, save_out=None): #pylint: disable=W0231
+        self._action = action
         self.task = task
         self.out = None
         self.err = None
         self.result = None
         self.values = {}
+        self.save_out = save_out
+
+    @property
+    def action(self):
+        if isinstance(self._action, basestring):
+            return self._action
+        else:
+            ref, args, kw = normalize_callable(self._action)
+            kwargs = self._prepare_kwargs(self.task, ref, args, kw)
+            return ref(*args, **kwargs)
 
 
     def _print_process_output(self, process, input_, capture, realtime):
@@ -62,7 +134,7 @@ class CmdAction(BaseAction):
             if line:
                 capture.write(line)
                 if realtime:
-                    if sys.version > '3':
+                    if sys.version > '3': # pragma: no cover
                         realtime.write(line)
                     else:
                         realtime.write(line.encode(encoding))
@@ -85,7 +157,10 @@ class CmdAction(BaseAction):
             - TaskFailed: If subprocess return code isn't zero (and
         not greater than 125)
         """
-        action = self.expand_action()
+        try:
+            action = self.expand_action()
+        except Exception as exc:
+            return TaskError("CmdAction Error creating command string", exc)
 
         # spawn task process
         process = subprocess.Popen(action, shell=True,
@@ -121,6 +196,10 @@ class CmdAction(BaseAction):
             return TaskFailed("Command failed: '%s' returned %s" %
                              (action,process.returncode))
 
+        # save stdout in values
+        if self.save_out:
+            self.values[self.save_out] = self.out
+
 
     def expand_action(self):
         """expand action string using task meta informations
@@ -138,15 +217,11 @@ class CmdAction(BaseAction):
         subs_dict.update(self.task.options)
         return self.action % subs_dict
 
-
-    def clone(self, task):
-        return self.__class__(self.action, task)
-
     def __str__(self):
-        return "Cmd: %s" % self.expand_action()
+        return "Cmd: %s" % self._action
 
     def __repr__(self):
-        return "<CmdAction: '%s'>"  % self.expand_action()
+        return "<CmdAction: '%s'>" % str(self._action)
 
 
 
@@ -214,60 +289,8 @@ class PythonAction(BaseAction):
 
 
     def _prepare_kwargs(self):
-        """
-        Prepare keyword arguments (targets, dependencies, changed,
-        cmd line options)
-        Inspect python callable and add missing arguments:
-        - that the callable expects
-        - have not been passed (as a regular arg or as keyword arg)
-        - are available internally through the task object
-        """
-        # Return just what was passed in task generator
-        # dictionary if the task isn't available
-        if not self.task:
-            return self.kwargs
-
-        try:
-            argspec = inspect.getargspec(self.py_callable)
-        except TypeError:
-            argspec = inspect.getargspec(self.py_callable.__call__)
-        # named tuples only from python 2.6 :(
-        argspec_args = argspec[0]
-        argspec_keywords = argspec[2]
-        argspec_defaults = argspec[3]
-        # use task meta information as extra_args
-        extra_args = {'targets': self.task.targets,
-                      'dependencies': self.task.file_dep,
-                      'changed': self.task.dep_changed}
-
-        # tasks parameter options
-        extra_args.update(self.task.options)
-        kwargs = self.kwargs.copy()
-
-        for key in extra_args.keys():
-            # check key is a positional parameter
-            if key in argspec_args:
-                arg_pos = argspec_args.index(key)
-
-                # it is forbidden to use default values for this arguments
-                # because the user might be unware of this magic.
-                if (argspec_defaults and
-                    len(argspec_defaults) > (len(argspec_args) - (arg_pos+1))):
-                    msg = ("%s.%s: '%s' argument default value not allowed "
-                           "(reserved by doit)"
-                           % (self.task.name, self.py_callable.__name__, key))
-                    raise InvalidTask(msg)
-
-                # if not over-written by value passed in *args use extra_arg
-                overwritten = arg_pos < len(self.args)
-                if not overwritten:
-                    kwargs[key] = extra_args[key]
-
-            # if function has **kwargs include extra_arg on it
-            elif argspec_keywords and key not in self.kwargs:
-                kwargs[key] = extra_args[key]
-        return kwargs
-
+        return BaseAction._prepare_kwargs(self.task, self.py_callable,
+                                          self.args, self.kwargs)
 
     def execute(self, out=None, err=None):
         """Execute command action
@@ -328,9 +351,6 @@ class PythonAction(BaseAction):
                              "returned %s (%s)" %
                              (self.py_callable, returned_value,
                               type(returned_value)))
-
-    def clone(self, task):
-        return self.__class__(self.py_callable, self.args, self.kwargs, task)
 
     def __str__(self):
         # get object description excluding runtime memory address
