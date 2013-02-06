@@ -7,7 +7,7 @@ Build-Depends: debhelper (>= 9)
 Build-Depends-Indep: python-all,
  python-support (>= 1),
  bash-completion,
- python-sphinx,
+ python-sphinx (>= 1.0.7+dfsg) | python3-sphinx,
  python-pyinotify,
  python-setuptools,
  python3-all,
@@ -53,7 +53,7 @@ Description: Automation tool for executing any kind of task in a build-tools fas
 Package: python-doit-doc
 Architecture: all
 Section: doc
-Depends: ${misc:Depends}, libjs-jquery, libjs-underscore, libjs-sphinxdoc
+Depends: ${misc:Depends}, ${sphinxdoc:Depends}
 Recommends: python-doit
 Description: Automation tool for executing any kind of task in a build-tools fashion - doc
  DoIt is an automation tool that brings the power of build-tools to execute any

@@ -8,7 +8,7 @@ PYVERS :=  python2.7
 PY3VERS := $(shell py3versions -s)
 
 %:
-	dh $@ --with python2,python3
+	dh $@ --with bash-completion --with sphinxdoc --with python2,python3
 
 override_dh_auto_build:
 	cp bash_completion_doit debian/bash_completion_doit3
@@ -25,7 +25,6 @@ override_dh_auto_clean:
 
 override_dh_auto_install:
 	rm -rf __pycache__
-	dh_bash-completion
 	set -ex; \
 	for py in $(PYVERS); do \
 		$$py setup.py install --root debian/python-doit \
@@ -37,15 +36,10 @@ override_dh_auto_install:
 				      --install-layout=deb; \
 	done
 	mv debian/python3-doit/usr/bin/doit debian/python3-doit/usr/bin/doit3
-	# Doc
+	rst2man debian/doit.rst debian/doit.1
+	rst2man debian/doit3.rst debian/doit3.1
 	set -ex; \
 		cd doc; \
 		make html; \
 		cd -;
-	rm -f doc/_build/html/_static/underscore.js
-	rm -f doc/_build/html/_static/jquery.js
-	rm -f doc/_build/html/_static/doctools.js
-	rm -f doc/_build/html/_static/searchtools.js
-	rm -f doc/_build/html/_static/sidebar.js
-	rst2man debian/doit.rst debian/doit.1
-	rst2man debian/doit3.rst debian/doit3.1
+
