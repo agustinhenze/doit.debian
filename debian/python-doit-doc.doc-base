@@ -1,6 +1,6 @@
 Document: python-doit-reference-manual
 Title: Python doit Library Reference Manual
-Author: xxxx
+Author: Eduardo Naufel Schettino
 Abstract: doit is an automation tool for bring the power of build-tools
  to execute any kind of task
 Section: Programming/Python
