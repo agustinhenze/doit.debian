@@ -70,16 +70,10 @@ class TestCmdAction(object):
         assert "12" == my_action.result
 
     def test_values(self):
-        # for cmdActions they are always empty
+        # for cmdActions they are emtpy if save_out not specified
         my_action = action.CmdAction("%s 1 2" % PROGRAM)
         my_action.execute()
         assert {} == my_action.values
-
-    def test_clone(self):
-        my_action = action.CmdAction("%s 1 2" % PROGRAM, "x")
-        clone = my_action.clone('y')
-        assert my_action.action == clone.action
-        assert 'y' == clone.task
 
 
 class TestCmdVerbosity(object):
@@ -129,7 +123,7 @@ class TestCmdExpandAction(object):
         targets = ["data/target", "data/targetXXX"]
         task = FakeTask(dependencies, ["data/dependency1"], targets, {})
         my_action = action.CmdAction(cmd, task)
-        my_action.execute()
+        assert my_action.execute() is None
 
         got = my_action.out.split('-')
         assert task.file_dep == got[0].split(), got[0]
@@ -141,10 +135,36 @@ class TestCmdExpandAction(object):
         cmd += " %(opt1)s - %(opt2)s"
         task = FakeTask([],[],[],{'opt1':'3', 'opt2':'abc def'})
         my_action = action.CmdAction(cmd, task)
-        my_action.execute()
-
+        assert my_action.execute() is None
         got = my_action.out.strip()
         assert "3 - abc def" == got, repr(got)
+
+    def test_callable_return_command_str(self):
+        def get_cmd(opt1, opt2):
+            cmd = "python %s/myecho.py" % TEST_PATH
+            return cmd + " %s - %s" % (opt1, opt2)
+        task = FakeTask([],[],[],{'opt1':'3', 'opt2':'abc def'})
+        my_action = action.CmdAction(get_cmd, task)
+        assert my_action.execute() is None
+        got = my_action.out.strip()
+        assert "3 - abc def" == got, repr(got)
+
+    def test_callable_tuple_return_command_str(self):
+        def get_cmd(opt1, opt2):
+            cmd = "python %s/myecho.py" % TEST_PATH
+            return cmd + " %s - %s" % (opt1, opt2)
+        task = FakeTask([],[],[],{'opt1':'3'})
+        my_action = action.CmdAction((get_cmd, [], {'opt2':'abc def'}), task)
+        assert my_action.execute() is None
+        got = my_action.out.strip()
+        assert "3 - abc def" == got, repr(got)
+
+    def test_callable_invalid(self):
+        def get_cmd(blabla): pass
+        task = FakeTask([],[],[],{'opt1':'3'})
+        my_action = action.CmdAction(get_cmd, task)
+        got = my_action.execute()
+        assert isinstance(got, TaskError)
 
 
 
@@ -169,6 +189,15 @@ class TestCmd_print_process_output(object):
         unicode_in.write(u" 中文 \u2018".encode('utf-8'))
         unicode_in.seek(0)
         my_action._print_process_output(Mock(), unicode_in, Mock(), tmpfile)
+
+
+class TestCmdSaveOuput(object):
+    def test_success(self):
+        TEST_PATH = os.path.dirname(__file__)
+        PROGRAM = "python %s/sample_process.py" % TEST_PATH
+        my_action = action.CmdAction(PROGRAM + " x1 x2", save_out='out')
+        my_action.execute()
+        assert {'out': u'x1'} == my_action.values
 
 
 
@@ -320,15 +349,6 @@ class TestPythonAction(object):
         my_action = action.PythonAction(vvv)
         my_action.execute()
         assert {'x': 5, 'y':10} == my_action.values
-
-    def test_clone(self):
-        def aaa(): return 1
-        my_action = action.PythonAction(aaa, (3,), {'1':2}, 'x')
-        clone = my_action.clone('y')
-        assert my_action.py_callable == clone.py_callable
-        assert my_action.args == clone.args
-        assert my_action.kwargs == clone.kwargs
-        assert 'y' == clone.task
 
 
 class TestPythonVerbosity(object):

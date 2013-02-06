@@ -3,7 +3,6 @@
 
 import types
 import os
-import copy
 
 from .cmdparse import CmdOption, TaskParse
 from .exceptions import CatchedException, InvalidTask
@@ -46,18 +45,18 @@ class Task(object):
     DEFAULT_VERBOSITY = 1
 
     # list of valid types/values for each task attribute.
-    valid_attr = {'basename': ((str,), ()),
-                  'name': ((str,), ()),
-                  'actions': ((list, tuple,), (None,)),
-                  'file_dep': ((list, tuple,), ()),
-                  'task_dep': ((list, tuple,), ()),
-                  'uptodate': ((list, tuple,), ()),
-                  'calc_dep': ((list, tuple,), ()),
-                  'targets': ((list, tuple,), ()),
-                  'setup': ((list, tuple,), ()),
-                  'clean': ((list, tuple,), (True,)),
-                  'teardown': ((list, tuple,), ()),
-                  'doc': ((str,), (None,)),
+    valid_attr = {'basename': ((str, unicode), ()),
+                  'name': ((str, unicode), ()),
+                  'actions': ((list, tuple), (None,)),
+                  'file_dep': ((list, tuple), ()),
+                  'task_dep': ((list, tuple), ()),
+                  'uptodate': ((list, tuple), ()),
+                  'calc_dep': ((list, tuple), ()),
+                  'targets': ((list, tuple), ()),
+                  'setup': ((list, tuple), ()),
+                  'clean': ((list, tuple), (True,)),
+                  'teardown': ((list, tuple), ()),
+                  'doc': ((str, unicode), (None,)),
                   'params': ((list, tuple,), ()),
                   'verbosity': ((), (None,0,1,2,)),
                   'getargs': ((dict,), ()),
@@ -218,6 +217,8 @@ class Task(object):
     def update_deps(self, deps):
         """expand all kinds of dep input"""
         for dep, dep_values in deps.iteritems():
+            if dep not in self._expand_map:
+                continue
             self._expand_map[dep](self, dep_values)
 
 
@@ -410,36 +411,6 @@ class Task(object):
     def update_from_pickle(self, pickle_obj):
         """update self with data from pickled Task"""
         self.__dict__.update(pickle_obj.__dict__)
-
-    def clone(self):
-        """create a deep copy of this task"""
-        inst =  self.__class__.__new__(self.__class__)
-        inst.name = self.name
-        inst.targets = self.targets[:]
-        inst.uptodate = self.uptodate[:]
-        inst.value_savers = self.value_savers[:]
-        inst.is_subtask = self.is_subtask
-        inst.has_subtask = self.has_subtask
-        inst.result = self.result
-        inst.values = self.values.copy()
-        inst.verbosity = self.verbosity
-        inst.custom_title = self.custom_title
-        inst.getargs = copy.copy(self.getargs)
-        inst.setup_tasks = self.setup_tasks[:]
-        inst.taskcmd = self.taskcmd
-        inst.options = copy.copy(self.options)
-        inst._actions = self._actions[:]
-        inst._action_instances = [a.clone(inst) for a in self.actions]
-        inst._remove_targets = self._remove_targets
-        inst.clean_actions = [a.clone(inst) for a in self.clean_actions]
-        inst.teardown = [a.clone(inst) for a in self.teardown]
-        inst.dep_changed = self.dep_changed
-        inst.file_dep = copy.copy(self.file_dep)
-        inst.task_dep = self.task_dep[:]
-        inst.wild_dep = self.wild_dep[:]
-        inst.calc_dep = copy.copy(self.calc_dep)
-        inst.doc = self.doc
-        return inst
 
     def __lt__(self, other):
         """used on default sorting of tasks (alphabetically by name)"""

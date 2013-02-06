@@ -1,7 +1,16 @@
-"""Watch for modifications of file-system"""
+"""Watch for modifications of file-system
+use by cmd_auto module
+"""
 
 import os.path
-import platform
+
+def get_platform_system():
+    """return platform.system
+    platform module has many regexp, so importing it is slow...
+    import only if required
+    """
+    import platform
+    return platform.system()
 
 
 class FileModifyWatcher(object):
@@ -18,8 +27,7 @@ class FileModifyWatcher(object):
         """@param file_list (list-str): files to be watched"""
         self.file_list = set([os.path.abspath(f) for f in file_list])
         self.watch_dirs = set([os.path.dirname(f) for f in self.file_list])
-        self.notifier = None
-        self.platform = platform.system()
+        self.platform = get_platform_system()
         if self.platform not in self.supported_platforms:
             msg = "Unsupported platform '%s'\n" % self.platform
             msg += ("'auto' command is supported only on %s" %
@@ -76,14 +84,14 @@ class FileModifyWatcher(object):
                 handler(event)
 
         watch_manager = pyinotify.WatchManager()
-        mask = pyinotify.IN_CLOSE_WRITE #pylint: disable=E1101
         event_handler = EventHandler()
-        self.notifier = pyinotify.Notifier(watch_manager, event_handler)
+        notifier = pyinotify.Notifier(watch_manager, event_handler)
 
+        mask = pyinotify.IN_CLOSE_WRITE #pylint: disable=E1101
         for watch_this in self.watch_dirs:
             watch_manager.add_watch(watch_this, mask)
 
-        self.notifier.loop(loop_callback)
+        notifier.loop(loop_callback)
 
 
     def loop(self, loop_callback=None):
