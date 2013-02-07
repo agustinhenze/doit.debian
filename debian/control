@@ -23,7 +23,7 @@ Architecture: all
 Depends: ${python:Depends}, ${misc:Depends}, python-pyinotify
 Suggests: python-doit-doc
 Description: Automation tool for executing any kind of task in a build-tools fashion
- DoIt is an automation tool that brings the power of build-tools to execute any
+ doit is an automation tool that brings the power of build-tools to execute any
  kind of task.
  .
  Build-tools were created with two primary goals:
@@ -39,7 +39,7 @@ Architecture: all
 Depends: ${python3:Depends}, ${misc:Depends}, python3-pyinotify
 Suggests: python-doit-doc
 Description: Automation tool for executing any kind of task in a build-tools fashion
- DoIt is an automation tool that brings the power of build-tools to execute any
+ doit is an automation tool that brings the power of build-tools to execute any
  kind of task.
  .
  Build-tools were created with two primary goals:
@@ -56,7 +56,7 @@ Section: doc
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
 Recommends: python-doit
 Description: Automation tool for executing any kind of task in a build-tools fashion - doc
- DoIt is an automation tool that brings the power of build-tools to execute any
+ doit is an automation tool that brings the power of build-tools to execute any
  kind of task.
  .
  Build-tools were created with two primary goals:
