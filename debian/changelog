@@ -7,6 +7,7 @@ doit (0.20.0-1) unstable; urgency=low
     - debian/rules: Clean-up symlinks
   * Fixed author in debian/python-doit-doc.doc-base file
   * Added call to run test cases
+    - Added dependency on python-mock and strace.
   * Updated home page url
   * Replaced "DoIt" for "doit" asked by the upstream author
   * Improved package description
