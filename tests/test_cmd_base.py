@@ -1,8 +1,12 @@
 import pytest
 
 from doit.cmdparse import CmdParseError, CmdOption
+from doit.exceptions import InvalidCommand
+from doit.task import Task
 from doit.cmd_base import Command, DoitCmdBase
 from doit.cmd_base import ModuleTaskLoader, DodoTaskLoader
+from doit.cmd_base import check_tasks_exist, tasks_and_deps_iter, subtasks_iter
+
 
 opt_bool = {'name': 'flag',
             'short':'f',
@@ -126,3 +130,65 @@ class TestDoitCmdBase(object):
         mycmd = MyCmd(DodoTaskLoader())
         assert 'min' == mycmd.parse_execute(['--mine', 'min'])
 
+
+
+class TestCheckTasksExist(object):
+    def test_None(self):
+        check_tasks_exist({}, None)
+        # nothing is raised
+
+    def test_invalid(self):
+        pytest.raises(InvalidCommand, check_tasks_exist, {}, 't2')
+
+    def test_valid(self):
+        tasks = {
+            't1': Task("t1", [""] ),
+            't2': Task("t2", [""], task_dep=['t1']),
+            }
+        check_tasks_exist(tasks, ['t2'])
+        # nothing is raised
+
+
+class TestTaskAndDepsIter(object):
+
+    def test_dep_iter(self):
+        tasks = {
+            't1': Task("t1", [""] ),
+            't2': Task("t2", [""], task_dep=['t1']),
+            't3': Task("t3", [""], setup=['t1']),
+            't4': Task("t4", [""], task_dep=['t3']),
+            }
+        def names(sel_tasks, repeated=False):
+            task_list = tasks_and_deps_iter(tasks, sel_tasks, repeated)
+            return [t.name for t in task_list]
+
+        # no deps
+        assert ['t1'] == names(['t1'])
+        # with task_dep
+        assert ['t2', 't1'] == names(['t2'])
+        # with setup
+        assert ['t3', 't1'] == names(['t3'])
+        # two levels
+        assert ['t4', 't3', 't1'] == names(['t4'])
+        # select 2
+        assert set(['t2', 't1']) == set(names(['t1', 't2']))
+        # repeat deps
+        got = names(['t1', 't2'], True)
+        assert 3 == len(got)
+        assert 't1' == got[-1]
+
+
+class TestSubtaskIter(object):
+
+    def test_sub_iter(self):
+        tasks = {
+            't1': Task("t1", [""] ),
+            't2': Task("t2", [""], task_dep=['t1', 't2:a', 't2:b']),
+            't2:a': Task("t2:a", [""], is_subtask=True),
+            't2:b': Task("t2:b", [""], is_subtask=True),
+            }
+        def names(task_name):
+            return [t.name for t in subtasks_iter(tasks, tasks[task_name])]
+
+        assert [] == names('t1')
+        assert ['t2:a', 't2:b'] == names('t2')

@@ -7,7 +7,10 @@ import pytest
 
 from doit.tools import create_folder
 
-DOIT_CONFIG = {'default_tasks': ['checker', 'ut']}
+DOIT_CONFIG = {
+    'default_tasks': ['checker', 'ut'],
+#    'backend': 'sqlite3',
+    }
 
 CODE_FILES = glob.glob("doit/*.py")
 TEST_FILES = glob.glob("tests/test_*.py")
@@ -25,6 +28,7 @@ def task_checker():
 
 def run_test(test):
     return not bool(pytest.main(test))
+    #return not bool(pytest.main("-v " + test))
 def task_ut():
     """run unit-tests"""
     for test in TEST_FILES:
@@ -71,18 +75,9 @@ def task_coverage_module():
 
 ############# python3
 
-# distribute => setup.py test together with use_2to3 doesnt work hence this
 def task_test3():
     """run unitests on python3"""
-    this_folder = os.path.dirname(os.path.abspath(__file__))
-    test_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "../doit3test")
-    return {'actions': [
-            "rm -rf %s" % test_folder,
-            "cp -r %s %s" % (this_folder, test_folder),
-            "2to3 --write --nobackups %s" % test_folder,
-            "py.test-3.2 %s" % test_folder,
-            ],
+    return {'actions': ["py.test-3.2"],
             'verbosity': 2,
             }
 

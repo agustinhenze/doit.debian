@@ -1,10 +1,14 @@
 """Manage (save/check) task dependency-on-files data."""
 
 import os
-import sys
 import hashlib
-import dumbdbm
-import anydbm as ddbm
+import six
+if six.PY3: # pragma: no cover
+    from dbm import dumb
+    import dbm as ddbm
+else:
+    import dumbdbm as dumb
+    import anydbm as ddbm
 
 # uncomment imports below to run tests on all dbm backends...
 #import dbhash as ddbm # (removed from python3)
@@ -16,14 +20,19 @@ import anydbm as ddbm
 #       >>> anydbm._defaultmod
 
 from .compat import json
+import sqlite3
 
 
 USE_FILE_TIMESTAMP = True
 
 
+class DatabaseException(Exception):
+    """Exception class for whatever backend exception"""
+    pass
+
 def get_md5(input_data):
     """return md5 from string or unicode"""
-    if isinstance(input_data, unicode):
+    if isinstance(input_data, six.text_type):
         byte_data = input_data.encode("utf-8")
     else:
         byte_data = input_data
@@ -87,7 +96,7 @@ class JsonDB(object):
                        "To fix this problem, you can just remove the " +
                        "corrupted file, a new one will be generated.\n")
                 error.args = (msg,)
-                raise
+                raise DatabaseException(msg)
         finally:
             db_file.close()
 
@@ -133,9 +142,9 @@ class JsonDB(object):
 
 def encode_task_id(func):
     """in python 2 dbm module does not automatically convert unicode to bytes"""
-    if sys.version < '3':
+    if not six.PY3:
         def wrap(self, key, *args):
-            if isinstance(key, unicode):
+            if isinstance(key, six.text_type):
                 key = key.encode('utf-8')
             return func(self, key, *args)
         return wrap
@@ -175,10 +184,10 @@ class DbmDB(object):
                     'To fix the issue you can just remove the database file(s) '
                     'and a new one will be generated.'
                     % {'filename': repr(self.name)})
-                raise exception.__class__, new_message
+                raise DatabaseException(new_message)
             else:
                 # Re-raise any other exceptions
-                raise
+                raise DatabaseException(message)
 
         self._db = {}
         self.dirty = set()
@@ -248,7 +257,7 @@ class DbmDB(object):
         """remove saved dependecies from DB for all tasks"""
         self._db = {}
         # dumb dbm always opens file in update mode
-        if isinstance(self._dbm, dumbdbm._Database): # pragma: no cover
+        if isinstance(self._dbm, dumb._Database): # pragma: no cover
             self._dbm._index = {}
             self._dbm.close()
         # gdbm can not be running on 2 instances on same thread
@@ -256,6 +265,89 @@ class DbmDB(object):
         del self._dbm
         self._dbm = ddbm.open(self.name, 'n')
         self.dirty = set()
+
+
+
+class SqliteDB(object):
+    """ sqlite3 json backend """
+
+    def __init__(self, name):
+        self.name = name
+        self._conn = self._sqlite3(self.name)
+
+    def _sqlite3(self, name):
+        """Open/create a sqlite3 DB file"""
+        def dict_factory(cursor, row):
+            d = {}
+            for idx, col in enumerate(cursor.description):
+                d[col[0]] = row[idx]
+            return d
+        def converter(data):
+            return json.loads(data.decode('utf-8'))
+
+        sqlite3.register_adapter(list, json.dumps)
+        sqlite3.register_adapter(dict, json.dumps)
+        sqlite3.register_converter("json", converter)
+        conn = sqlite3.connect(self.name,
+                    detect_types=sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
+                    isolation_level=None)
+        conn.row_factory = dict_factory
+        sqlscript = """
+            create table if not exists doit (
+                task_id text not null primary key,
+                task_data json
+            );"""
+        try:
+            conn.execute(sqlscript)
+        except sqlite3.DatabaseError as exception:
+            new_message = (
+                'Dependencies file in %(filename)s seems to use '
+                'an bad format or is corrupted.\n'
+                'To fix the issue you can just remove the database file(s) '
+                'and a new one will be generated.'
+                'Original error: %(msg)s'
+                % {'filename': repr(self.name), 'msg': str(exception)})
+            raise DatabaseException(new_message)
+        return conn
+
+    def get(self, task_id, dependency):
+        """Get value stored in the DB.
+
+        @return: (string) or (None) if entry not found
+        """
+        data = self._get_task_data(task_id)
+        return data.get(dependency, None)
+
+    def _get_task_data(self, task_id):
+        data = self._conn.execute('select task_data from doit where task_id=?',
+                                  (task_id,)).fetchone()
+        return data['task_data'] if data else {}
+
+    def set(self, task_id, dependency, value):
+        """Store value in the DB."""
+        task_data = self._get_task_data(task_id)
+        task_data[dependency] = value
+        self._conn.execute('insert or replace into doit values (?,?)',
+                           (task_id, task_data))
+
+    def in_(self, task_id):
+        if self._conn.execute('select task_id from doit where task_id=?',
+                              (task_id,)).fetchone():
+            return True
+        return False
+
+    def dump(self):
+        """save/close sqlite3 DB file"""
+        self._conn.commit()
+        self._conn.close()
+
+    def remove(self, task_id):
+        """remove saved dependecies from DB for taskId"""
+        self._conn.execute('delete from doit where task_id=?', (task_id,))
+
+    def remove_all(self):
+        """remove saved dependecies from DB for all task"""
+        self._conn.execute('delete from doit')
 
 
 
@@ -417,6 +509,8 @@ class DependencyBase(object):
         return status
 
 
+####################
+
 class JsonDependency(DependencyBase):
     """Task dependency manager with JSON backend"""
     def __init__(self, name):
@@ -427,6 +521,19 @@ class DbmDependency(DependencyBase):
     def __init__(self, name):
         DependencyBase.__init__(self, DbmDB(name))
 
+class SqliteDependency(DependencyBase):
+    """Task dependency manager with sqlite backend"""
+    def __init__(self, name):
+        DependencyBase.__init__(self, SqliteDB(name))
+
+# map string used in cmdline option to class
+backend_map = {
+    'json': JsonDependency,
+    'dbm': DbmDependency,
+    'sqlite3': SqliteDependency,
+}
+
+#############
 
 class UptodateCalculator(object):
     """Base class for 'uptodate' that need access to all tasks
@@ -443,4 +550,3 @@ class UptodateCalculator(object):
 
 # defaut dependency backend implementation
 Dependency = DbmDependency
-

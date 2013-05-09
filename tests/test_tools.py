@@ -3,6 +3,7 @@
 import os
 import datetime
 import operator
+import six
 
 import pytest
 
@@ -11,16 +12,28 @@ from doit import tools
 from doit import task
 
 
-def test_create_folder():
-    def rm_dir():
-        if os.path.exists(DIR_DEP):
-            os.removedirs(DIR_DEP)
+class TestCreateFolder(object):
+    def test_create_folder(self):
+        def rm_dir():
+            if os.path.exists(DIR_DEP):
+                os.removedirs(DIR_DEP)
 
-    DIR_DEP = os.path.join(os.path.dirname(__file__),"parent/child/")
-    rm_dir()
-    assert True == tools.create_folder(DIR_DEP)
-    assert os.path.exists(DIR_DEP)
-    rm_dir()
+        DIR_DEP = os.path.join(os.path.dirname(__file__),"parent/child/")
+        rm_dir()
+        tools.create_folder(DIR_DEP)
+        assert os.path.exists(DIR_DEP)
+        rm_dir()
+
+    def test_error_if_path_is_a_file(self):
+        def rm_file(path):
+            if os.path.exists(path):
+                os.remove(path)
+
+        path = os.path.join(os.path.dirname(__file__), "test_create_folder")
+        with open(path, 'w') as fp:
+            fp.write('testing')
+        pytest.raises(OSError, tools.create_folder, path)
+        rm_file(path)
 
 
 class TestTitleWithActions(object):
@@ -128,7 +141,7 @@ class TestConfigChanged(object):
         assert False == ub(t1, t1.values)
 
     def test_unicode(self):
-        ua = tools.config_changed({'x':u"中文"})
+        ua = tools.config_changed({'x':six.u("中文")})
         ub = tools.config_changed('b')
         t1 = task.Task("TaskX", None, uptodate=[ua])
         assert False == ua(t1, t1.values)
@@ -248,7 +261,7 @@ class TestCheckTimestampUnchanged(object):
         assert True == check(t, t.values)
 
         # stored timestamp less than current, up to date
-        future_time = t.values.values()[0] + 100
+        future_time = list(six.itervalues(t.values))[0] + 100
         monkeypatch.setattr(check, '_get_time', lambda: future_time)
         assert False == check(t, t.values)
 
@@ -304,3 +317,18 @@ class TestPythonInteractiveAction(object):
         my_action = tools.PythonInteractiveAction(raise_x)
         got = my_action.execute()
         assert isinstance(got, exceptions.TaskError)
+
+    def test_returned_dict_saved_result_values(self):
+        def val(): return {'x': 3}
+        my_action = tools.PythonInteractiveAction(val)
+        got = my_action.execute()
+        assert got is None
+        assert my_action.result == {'x': 3}
+        assert my_action.values == {'x': 3}
+
+    def test_returned_string_saved_result(self):
+        def val(): return 'hello'
+        my_action = tools.PythonInteractiveAction(val)
+        got = my_action.execute()
+        assert got is None
+        assert my_action.result == 'hello'
