@@ -3,6 +3,23 @@
 Changes
 =======
 
+
+0.21.0 (*2013-04-29*)
+======================
+
+- fix #38: `doit.tools.create_folder()` raise error if file exists in path
+- `create_doit_tasks` not called for unbound methods
+- support execution using "python -m doit"
+- fix #33: Failing to clean a group of task(s) with sub-tasks
+- python-actions can take a magic "task" parameter as reference to task
+- expose task.clean_targets
+- tools.PythonInteractiveAction saves "result" and "values"
+- fix #40. added option to use threads for parallel running of tasks
+- same code base for python 2 & 3 (no need to use tool `2to3`)
+- add sqlite3 DB backend
+- added option to select backend
+
+
 0.20.0 (*2013-01-09*)
 ======================
 

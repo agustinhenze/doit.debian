@@ -13,7 +13,7 @@ if sys.version_info >= (3,0):
 import platform
 platform_system = platform.system()
 
-install_requires = []
+install_requires = ['six']
 # auto command dependencies to watch file-system
 if platform_system == "Darwin":
     install_requires.append('macfsevents')
@@ -41,16 +41,17 @@ class PyTest(Command):
         raise SystemExit(errno)
 
 
-extra = {}
-if sys.version_info >= (3,0):
-    extra.update(use_2to3=True)
+# FIXME just put link to webpage
+long_description = """
+`doit` comes from the idea of bringing the power of build-tools
+to execute any kind of **task**
 
-long_description = open('doc/index.rst', 'rb'
-                        ).read().decode('utf-8').split('Quick Start')[0]
+`website/docs <http://pydoit.org>`_
+"""
 
 setup(name = 'doit',
       description = 'doit - Automation Tool',
-      version = '0.20.0',
+      version = '0.21.0',
       license = 'MIT',
       author = 'Eduardo Naufel Schettino',
       author_email = 'schettino72@gmail.com',
@@ -83,6 +84,4 @@ setup(name = 'doit',
       cmdclass = {'test': PyTest},
       install_requires = install_requires,
       long_description = long_description,
-      **extra
       )
-

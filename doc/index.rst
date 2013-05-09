@@ -38,7 +38,7 @@ and contains some extra meta-data.
 
 .. topic:: parallel execution
 
-  built-in support for parallel (multi-process) task execution
+  built-in support for parallel (threaded or multi-process) task execution
   (:ref:`more <parallel-execution>`)
 
 
@@ -126,7 +126,7 @@ What people are saying about `doit`
 Project Details
 ===============
 
-* This is an open-source project (`MIT license <http://opensource.org/licenses/mit-license.php>`_) written in python (runs on Python 2.6 through 3.3)
+* This is an open-source project (`MIT license <http://opensource.org/licenses/mit-license.php>`_) written in python. Runs on Python 2.6 through 3.3 with a single codebase.
 
 * Download from `PyPi <http://pypi.python.org/pypi/doit>`_
 
@@ -148,7 +148,7 @@ Status
 
 This blog `post <http://schettino72.wordpress.com/2008/04/14/doit-a-build-tool-tale/>`_ explains how everything started in 2008.
 
-`doit` is under active development. Version 0.20 released on 2013-01.
+`doit` is under active development. Version 0.21 released on 2013-04.
 
 `doit` core features are quite stable. So if there is no recent development,
 it does NOT mean `doit` is not being maintained...
