@@ -10,10 +10,14 @@ Build-Depends-Indep: python-all,
  python-sphinx (>= 1.0.7+dfsg) | python3-sphinx,
  python-pyinotify,
  python-setuptools,
+ python-mock,
+ python-six,
+ strace,
+ python-pytest,
  python3-all,
  python3-setuptools,
- python-mock,
- strace,
+ python3-six,
+ python3-mock,
 Standards-Version: 3.9.4
 X-Python-Version: >= 2.7
 Homepage: http://pydoit.org
@@ -22,7 +26,7 @@ Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/doit.git
 
 Package: python-doit
 Architecture: all
-Depends: ${python:Depends}, ${misc:Depends}, python-pyinotify
+Depends: ${python:Depends}, ${misc:Depends}, python-pyinotify, python-six
 Suggests: python-doit-doc
 Description: Automation tool for executing any kind of task in a build-tools fashion
  doit is an automation tool that brings the power of build-tools to execute any
@@ -40,7 +44,7 @@ Description: Automation tool for executing any kind of task in a build-tools fas
 
 Package: python3-doit
 Architecture: all
-Depends: ${python3:Depends}, ${misc:Depends}, python3-pyinotify
+Depends: ${python3:Depends}, ${misc:Depends}, python3-pyinotify, python3-six
 Suggests: python-doit-doc
 Description: Automation tool for executing any kind of task in a build-tools fashion
  doit is an automation tool that brings the power of build-tools to execute any
