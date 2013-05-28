@@ -13,7 +13,7 @@ PY3VERS := $(shell py3versions -s)
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	set -ex; \
-		for py in $(PYVERS); do \
+		for py in $(PYVERS) $(PY3VERS); do \
 			$$py runtests.py; \
 		done
 endif
@@ -30,6 +30,10 @@ override_dh_auto_clean:
 	rm -f debian/doit.1
 	rm -f debian/doit3.1
 	rm -f debian/bash_completion_doit3
+	rm -f tests/data/stop
+	rm -f tests/data/dependency*
+	rm -f tests/data/target
+	rm -f tests/data/w*.txt
 
 override_dh_auto_install:
 	rm -rf __pycache__
