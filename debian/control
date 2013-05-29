@@ -59,6 +59,8 @@ Description: Automation tool for executing any kind of task in a build-tools fas
   * correct execution order
   * parallel execution
   * powerful dependency system
+  .
+ This is the Python 3 version of the package.
 
 Package: python-doit-doc
 Architecture: all
