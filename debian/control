@@ -4,31 +4,35 @@ Priority: optional
 Maintainer: Agustin Henze <tin@sluc.org.ar>
 Uploaders: Ulises Vitulli <dererk@debian.org>
 Build-Depends: debhelper (>= 9)
-Build-Depends-Indep: python-all,
- python-support (>= 1),
+Build-Depends-Indep:
  bash-completion,
+ strace,
+ python-all,
+ python-support (>= 1),
  python-sphinx (>= 1.0.7+dfsg) | python3-sphinx,
  python-pyinotify,
  python-setuptools,
  python-mock,
  python-six,
- strace,
+ python-gdbm,
  python-pytest,
  python3-all,
  python3-setuptools,
  python3-six,
  python3-mock,
+ python3-gdbm,
 Standards-Version: 3.9.4
 X-Python-Version: >= 2.7
 Homepage: http://pydoit.org
-Vcs-Git: git://git.debian.org/collab-maint/doit.git
+Vcs-Git: git://anonscm.debian.org/collab-maint/doit.git
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/doit.git
 
 Package: python-doit
 Architecture: all
 Depends: ${python:Depends}, ${misc:Depends}, python-pyinotify, python-six
+Recommends: strace, python-gdbm
 Suggests: python-doit-doc
-Description: Automation tool for executing any kind of task in a build-tools fashion
+Description: Automation tool to execute any kind of task in a build-tools fashion
  doit is an automation tool that brings the power of build-tools to execute any
  kind of task.
  .
@@ -45,8 +49,9 @@ Description: Automation tool for executing any kind of task in a build-tools fas
 Package: python3-doit
 Architecture: all
 Depends: ${python3:Depends}, ${misc:Depends}, python3-pyinotify, python3-six
+Recommends: strace, python3-gdbm
 Suggests: python-doit-doc
-Description: Automation tool for executing any kind of task in a build-tools fashion
+Description: Automation tool (Python3) to execute any kind of task in a build-tools fashion
  doit is an automation tool that brings the power of build-tools to execute any
  kind of task.
  .
@@ -59,7 +64,7 @@ Description: Automation tool for executing any kind of task in a build-tools fas
   * correct execution order
   * parallel execution
   * powerful dependency system
-  .
+ .
  This is the Python 3 version of the package.
 
 Package: python-doit-doc
