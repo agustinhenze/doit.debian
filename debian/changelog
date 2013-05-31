@@ -1,3 +1,17 @@
+doit (0.21.1-1) unstable; urgency=low
+
+  * Imported Upstream version 0.21.1
+  * Add new dependency, the new version use six project for run in python2
+    and python3.
+  * Add missing dependencies (strace, python-gdbm, python3-gdbm).
+  * Little improvements in package description.
+  * Change the url in the Vcs-Git field by the canonical url.
+  * Remove the command for run test cases in debian/rules file. It fix FTBFS in
+    pbuilder.
+  * Convert debian/copyright file to machine readable.
+
+ -- Agustin Henze <tin@sluc.org.ar>  Fri, 31 May 2013 19:38:36 -0300
+
 doit (0.20.0-1) unstable; urgency=low
 
   * Imported Upstream version 0.20.0
