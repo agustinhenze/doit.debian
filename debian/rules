@@ -10,14 +10,6 @@ PY3VERS := $(shell py3versions -s)
 %:
 	dh $@ --with bash-completion --with sphinxdoc --with python2,python3
 
-override_dh_auto_test:
-ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	set -ex; \
-		for py in $(PYVERS) $(PY3VERS); do \
-			$$py runtests.py; \
-		done
-endif
-
 override_dh_auto_build:
 	cp bash_completion_doit debian/bash_completion_doit3
 	sed -i 's@doit@doit3@g' debian/bash_completion_doit3
