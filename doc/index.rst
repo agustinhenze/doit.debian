@@ -52,7 +52,7 @@ process of source code. `doit` was designed to solve a broader range of tasks.
      it can be customized for each task (:ref:`more <attr-uptodate>`)
    - *target* files are not required in order to check if a task is up-to-date
      (:ref:`more <up-to-date-def>`)
-   - *dependencies* can be dinamically calculated by other tasks
+   - *dependencies* can be dynamically calculated by other tasks
      (:ref:`more <attr-calc_dep>`)
 
 
@@ -84,12 +84,12 @@ Other features...
 
 .. topic:: self documented
 
-  `doit` command allows you to list and obtain help/documentaion for tasks
+  `doit` command allows you to list and obtain help/documentation for tasks
   (:ref:`more <cmd-list>`)
 
 .. topic:: inotify integration
 
-  built-in support for a long-running process that automaticly re-execute tasks
+  built-in support for a long-running process that automatically re-execute tasks
   based on file changes by external process (linux/mac only)
   (:ref:`more <cmd-auto>`)
 
@@ -148,7 +148,7 @@ Status
 
 This blog `post <http://schettino72.wordpress.com/2008/04/14/doit-a-build-tool-tale/>`_ explains how everything started in 2008.
 
-`doit` is under active development. Version 0.21 released on 2013-04.
+`doit` is under active development. Version 0.22 released on 2013-07.
 
 `doit` core features are quite stable. So if there is no recent development,
 it does NOT mean `doit` is not being maintained...
