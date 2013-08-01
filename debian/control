@@ -1,14 +1,12 @@
 Source: doit
 Section: python
 Priority: optional
-Maintainer: Agustin Henze <tin@sluc.org.ar>
+Maintainer: Agustin Henze <tin@debian.org>
 Uploaders: Ulises Vitulli <dererk@debian.org>
-Build-Depends: debhelper (>= 9)
-Build-Depends-Indep:
+Build-Depends: debhelper (>= 9),
  bash-completion,
  strace,
  python-all,
- python-support (>= 1),
  python-sphinx (>= 1.0.7+dfsg) | python3-sphinx,
  python-pyinotify,
  python-setuptools,
@@ -21,6 +19,7 @@ Build-Depends-Indep:
  python3-six,
  python3-mock,
  python3-gdbm,
+ python3-pyinotify,
 Standards-Version: 3.9.4
 X-Python-Version: >= 2.7
 Homepage: http://pydoit.org
