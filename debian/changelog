@@ -1,3 +1,10 @@
+doit (0.22.1-1) unstable; urgency=low
+
+  * Imported Upstream version 0.22.1
+  * Add get-orig-source target into debian/rules file
+
+ -- Agustin Henze <tin@debian.org>  Thu, 15 Aug 2013 14:30:41 +0200
+
 doit (0.22.0-1) unstable; urgency=low
 
   * Imported Upstream version 0.22.0 (Closes: #711879) "bash completion script
