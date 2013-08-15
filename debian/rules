@@ -6,6 +6,7 @@
 
 PYVERS :=  python2.7
 PY3VERS := $(shell py3versions -s)
+UPSTREAM_VERSION := $(shell dpkg-parsechangelog | sed -n -e's/^Version: \(.*\)-[^-]\+/\1/p')
 
 %:
 	dh $@ --with bash-completion --with sphinxdoc --with python2,python3
@@ -54,3 +55,11 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 			$$py runtests.py; \
 		done
 endif
+
+get-orig-source:
+		@if [ ! -d "debian" ] ; then \
+			echo 'Run this from the top directory of the Debian source' >&2; \
+			exit 1; \
+		fi
+		wget http://pypi.python.org/packages/source/d/doit/doit-$(UPSTREAM_VERSION).tar.gz \
+			-O ../doit_$(UPSTREAM_VERSION).orig.tar.gz;
