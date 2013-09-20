@@ -169,6 +169,7 @@ pre
 prev
 programmatically
 py
+py3
 py'
 pyFiles
 pychecker
@@ -226,3 +227,6 @@ xxx
 xyz
 utf8
 WORDBREAKS
+Popen
+popen
+CmdAction's
