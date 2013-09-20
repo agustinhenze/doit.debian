@@ -3,12 +3,25 @@
 Changes
 =======
 
+0.23.0 (*2013-09-20*)
+======================
+
+ - support definition of group tasks using basename without any task
+ - added task property `watch` to specific extra files/folders in auto command
+ - CmdAction support for all arguments of subprocess.Popen, but stdout and stderr
+ - added command option `-k` as short for `--seek-file`
+ - task action can be specified as a list of strings (executed using subprocess.Popen shell=False)
+ - fix #60: result of calc_dep only considered if not run yet
+ - fix #61: test failures involving DBM
+ - fix: do not allow duplicate task names
+
+
 0.22.1 (*2013-08-04*)
-===========================
+======================
 
  - fix reporter output in py3 was being displayed as bytes instead of string
- - fix pr#12 read file in chuncks when calculating MD5
- - fix #54 - remove distribute boostraping during instalation
+ - fix pr#12 read file in chunks when calculating MD5
+ - fix #54 - remove distribute bootstrapping during installation
 
 
 0.22.0 (*2013-07-05*)

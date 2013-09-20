@@ -2,7 +2,8 @@
 Other Commands
 ================
 
-Lets use more complex example to demonstrate the command line features. The example below is used to manage a very simple C project.
+Let's use a more complex example to demonstrate the command line features.
+The example below is used to manage a very simple C project.
 
 
 .. literalinclude:: tutorial/cproject.py
@@ -15,6 +16,12 @@ help
 `doit` comes with several commands. `doit help` will list all available commands.
 
 You can also get help from each available command. e.g. `doit help run`.
+
+.. note::
+
+    Not all options/parameters are documented below.
+    Always check `doit help <cmd>` to see a complete list of options.
+
 
 `doit help task` will display information on all fields/attributes a task dictionary from a `dodo` file accepts.
 
@@ -132,8 +139,11 @@ auto (watch)
 
    Supported on Linux and Mac only.
 
-`auto` sub-command is an alternative way of executing your tasks. It is a long running process that only terminates when it is interrupted (Ctrl-C). When started it will execute the given tasks. After that it will watch the file system for modifications in the file-dependencies.  When a file is modified the tasks are re-executed.
-
+`auto` sub-command is an alternative way of executing your tasks.
+It is a long running process that only terminates when it is interrupted (Ctrl-C).
+When started it will execute the given tasks. After that it will watch the
+file system for modifications in the file-dependencies.
+When a file is modified the tasks are re-executed.
 
 .. code-block:: console
 
@@ -146,13 +156,23 @@ auto (watch)
    every time tasks need to be re-executed.
 
 
+``watch`` parameter
+^^^^^^^^^^^^^^^^^^^^^
+
+Apart from ``file_dep`` you can use the parameter ``watch`` to pass extra
+paths to be watched for (including folders). The ``watch`` parameter can also
+be specified for a group of "sub-tasks".
+
+.. literalinclude:: tutorial/empty_subtasks.py
+
+
 
 dumpdb
 --------
 
 `doit` saves internal data in a file (`.doit.db` be default).
 It uses a binary format (whatever python's dbm is using in your system).
-This command will simply dumps its content in readable text format in the output.
+This command will simply dump its content in readable text format in the output.
 
 .. code-block:: console
 

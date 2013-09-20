@@ -21,10 +21,19 @@ PY_FILES = CODE_FILES + TESTING_FILES
 
 def task_checker():
     """run pyflakes on all project files"""
+
+    def add_pyflakes_builtins():
+        os.environ['PYFLAKES_BUILTINS'] = 'unicode'
+    yield {
+        'basename': '_pyflakes_builtins',
+        'actions': [add_pyflakes_builtins]
+        }
+
     for module in PY_FILES:
         yield {'actions': ["pyflakes %(dependencies)s"],
                'name':module,
                'file_dep':(module,),
+               'task_dep':['_pyflakes_builtins'],
                'title': (lambda task: task.name)}
 
 def run_test(test):
@@ -121,9 +130,10 @@ def task_spell():
 
 def task_sphinx():
     """generate website docs (include analytics)"""
-    action = "sphinx-build -b html -d %s_build/doctrees -A include_analytics=1 %s %s"
+    action = "sphinx-build -b html %s -d %s_build/doctrees %s %s"
+    opts = "-A include_analytics=1 -A include_gittip=1"
     return {
-        'actions': [action % (DOC_ROOT, DOC_ROOT, DOC_BUILD_PATH)],
+        'actions': [action % (opts, DOC_ROOT, DOC_ROOT, DOC_BUILD_PATH)],
         'verbosity': 2,
         'task_dep': ['spell'],
         }
