@@ -1,6 +1,8 @@
 doit (0.23.0-1) unstable; urgency=low
 
   * Imported Upstream version 0.23.0
+  * Remove the command for run test cases in debian/rules file. It fix FTBFS in
+    pbuilder, bug fixed in the next upstream version.
 
  -- Agustin Henze <tin@debian.org>  Fri, 20 Sep 2013 19:40:35 -0300
 

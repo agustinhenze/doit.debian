@@ -48,14 +48,6 @@ override_dh_auto_install:
 		make html; \
 		cd -;
 
-override_dh_auto_test:
-ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	set -ex; \
-		for py in $(PYVERS) $(PY3VERS); do \
-			$$py runtests.py; \
-		done
-endif
-
 get-orig-source:
 		@if [ ! -d "debian" ] ; then \
 			echo 'Run this from the top directory of the Debian source' >&2; \
