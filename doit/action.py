@@ -45,13 +45,14 @@ class BaseAction(object):
         except TypeError:
             argspec = inspect.getargspec(func.__call__)
         # use task meta information as extra_args
-        extra_args = {
+        meta_args = {
             'task': task,
             'targets': task.targets,
             'dependencies': task.file_dep,
             'changed': task.dep_changed,
             }
 
+        extra_args = dict(meta_args)
         # tasks parameter options
         extra_args.update(task.options)
         kwargs = kwargs.copy()
@@ -63,10 +64,10 @@ class BaseAction(object):
 
                 # it is forbidden to use default values for this arguments
                 # because the user might be unware of this magic.
-                if (argspec.defaults and
+                if (key in meta_args and argspec.defaults and
                     len(argspec.defaults) > (len(argspec.args) - (arg_pos+1))):
-                    msg = ("%s.%s: '%s' argument default value not allowed "
-                           "(reserved by doit)"
+                    msg = ("Task %s, action %s(): The argument '%s' is not "
+                           "allowed  to have a default value (reserved by doit)"
                            % (task.name, func.__name__, key))
                     raise InvalidTask(msg)
 
@@ -102,7 +103,7 @@ class CmdAction(BaseAction):
                  **pkwargs): #pylint: disable=W0231
         for forbidden in ('stdout', 'stderr'):
             if forbidden in pkwargs:
-                msg = "CmdAction can't take param named '{}'."
+                msg = "CmdAction can't take param named '{0}'."
                 raise InvalidTask(msg.format(forbidden))
         self._action = action
         self.task = task
@@ -247,7 +248,18 @@ class Writer(object):
     """write to many streams"""
     def __init__(self, *writers):
         """@param writers - file stream like objects"""
-        self.writers = writers
+        self.writers = []
+        self._isatty = True
+        for writer in writers:
+            self.add_writer(writer)
+
+    def add_writer(self, stream, isatty=None):
+        """adds a stream to the list of writers
+        @param isatty: (bool) if specified overwrites real isatty from stream
+        """
+        self.writers.append(stream)
+        isatty = stream.isatty() if (isatty is None) else isatty
+        self._isatty = self._isatty and isatty
 
     def write(self, text):
         """write 'text' to all streams"""
@@ -258,6 +270,9 @@ class Writer(object):
         """flush all streams"""
         for stream in self.writers:
             stream.flush()
+
+    def isatty(self):
+        return self._isatty
 
 
 class PythonAction(BaseAction):
@@ -323,18 +338,20 @@ class PythonAction(BaseAction):
         # set std stream
         old_stdout = sys.stdout
         output = StringIO()
+        out_writer = Writer()
+        # capture output but preserve isatty() from original stream
+        out_writer.add_writer(output, old_stdout.isatty())
+        if out:
+            out_writer.add_writer(out)
+        sys.stdout = out_writer
+
         old_stderr = sys.stderr
         errput = StringIO()
-
-        out_list = [output]
-        if out:
-            out_list.append(out)
-        err_list = [errput]
+        err_writer = Writer()
+        err_writer.add_writer(errput, old_stderr.isatty())
         if err:
-            err_list.append(err)
-
-        sys.stdout = Writer(*out_list)
-        sys.stderr = Writer(*err_list)
+            err_writer.add_writer(err)
+        sys.stderr = err_writer
 
         kwargs = self._prepare_kwargs()
 
