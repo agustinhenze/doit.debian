@@ -6,52 +6,58 @@
 
 PYVERS :=  python2.7
 PY3VERS := $(shell py3versions -s)
-UPSTREAM_VERSION := $(shell dpkg-parsechangelog | sed -n -e's/^Version: \(.*\)-[^-]\+/\1/p')
+UPSTREAM_VERSION := $(shell dpkg-parsechangelog -SVersion | cut -d- -f1)
+PACKAGE_NAME := $(shell dpkg-parsechangelog -SSource)
+export PYBUILD_NAME=$(PACKAGE_NAME)
 
 %:
-	dh $@ --with bash-completion --with sphinxdoc --with python2,python3
+	dh $@ --with bash-completion,sphinxdoc,python2,python3 --buildsystem=pybuild
 
-override_dh_auto_build:
+override_dh_bash-completion:
 	cp bash_completion_doit debian/bash_completion_doit3
 	sed -i 's@doit@doit3@g' debian/bash_completion_doit3
+	dh_bash-completion
+	cp zsh_completion_doit debian/zsh_completion_doit3
+	sed -i 's@doit@doit3@g' debian/zsh_completion_doit3
+	cp zsh_completion_doit debian/python-doit/usr/share/zsh/functions/Completion/Linux/_doit
+	cp debian/zsh_completion_doit3 debian/python3-doit/usr/share/zsh/functions/Completion/Linux/_doit3
 
 override_dh_auto_clean:
-	dh_auto_clean -- --all
-	rm -rf build
+	dh_auto_clean
 	rm -rf doc/_build
-	rm -rf doit.egg-info
 	rm -f debian/doit.1
 	rm -f debian/doit3.1
 	rm -f debian/bash_completion_doit3
+	rm -f debian/zsh_completion_doit3
 	rm -f tests/data/stop
 	rm -f tests/data/dependency*
 	rm -f tests/data/target
 	rm -f tests/data/w*.txt
 
 override_dh_auto_install:
-	rm -rf __pycache__
-	set -ex; \
-	for py in $(PYVERS); do \
-		$$py setup.py install --root debian/python-doit \
-				      --install-layout=deb; \
-	done
-	set -ex; \
-	for py in $(PY3VERS); do \
-		$$py setup.py install --root debian/python3-doit \
-				      --install-layout=deb; \
-	done
+	dh_auto_install
+	# Renaming the binary for python3
 	mv debian/python3-doit/usr/bin/doit debian/python3-doit/usr/bin/doit3
+	# Generate manpages
 	rst2man debian/doit.rst debian/doit.1
 	rst2man debian/doit3.rst debian/doit3.1
+	# build the html pages for the -doc package
 	set -ex; \
 		cd doc; \
-		make html; \
-		cd -;
+		make html;
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	set -ex; \
+		for py in $(PYVERS) $(PY3VERS); do \
+			$$py runtests.py; \
+		done
+endif
 
 get-orig-source:
-		@if [ ! -d "debian" ] ; then \
-			echo 'Run this from the top directory of the Debian source' >&2; \
-			exit 1; \
-		fi
-		wget http://pypi.python.org/packages/source/d/doit/doit-$(UPSTREAM_VERSION).tar.gz \
-			-O ../doit_$(UPSTREAM_VERSION).orig.tar.gz;
+	@if [ ! -d "debian" ] ; then \
+		echo 'Run this from the top directory of the Debian source' >&2; \
+		exit 1; \
+	fi
+	uscan --noconf --verbose --rename --destdir=$(CURDIR) \
+		--check-dirname-level=0 --force-download --download-version $(UPSTREAM_VERSION)

@@ -3,8 +3,10 @@ Section: python
 Priority: optional
 Maintainer: Agustin Henze <tin@debian.org>
 Uploaders: Ulises Vitulli <dererk@debian.org>
-Build-Depends: debhelper (>= 9),
+Build-Depends:
+ debhelper (>= 9),
  bash-completion,
+ dh-python,
  strace,
  python-all,
  python-sphinx (>= 1.0.7+dfsg) | python3-sphinx,
@@ -20,8 +22,9 @@ Build-Depends: debhelper (>= 9),
  python3-mock,
  python3-gdbm,
  python3-pyinotify,
-Standards-Version: 3.9.4
+Standards-Version: 3.9.5
 X-Python-Version: >= 2.7
+X-Python3-Version: >= 3.2
 Homepage: http://pydoit.org
 Vcs-Git: git://anonscm.debian.org/collab-maint/doit.git
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/doit.git

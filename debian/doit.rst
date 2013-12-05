@@ -24,7 +24,7 @@ doit
 OPTIONS
 =======
 
-[run]
+run
     run tasks.
 
 clean
@@ -39,8 +39,14 @@ forget
 ignore
     ignore task (skip) on subsequent runs
 
+dumpdb
+    dump dependency DB
+
 auto
     automatically run doit when a dependency changes
+
+strace
+    use strace to list file_deps and targets
 
 help
     show help / reference
@@ -61,4 +67,4 @@ This manual page was initially written by Agustin Henze <tin@sluc.org.ar>, for t
 COPYRIGHT
 =========
 
-2008-2012 Eduardo Naufel Schettino
+2008-2013 Eduardo Naufel Schettino
