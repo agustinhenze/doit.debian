@@ -10,6 +10,10 @@ class DefaultUpdate(dict):
     """A dictionary that has an "update_defaults" method where
     only items with default values are updated.
 
+    This is used when you have a dict that has multiple source of values
+    (i.e. hardcoded, config file, command line). And values are updated
+    beggining from the source with higher priority.
+
     A default value is added with the method set_default or add_defaults.
     """
     def __init__(self, *args, **kwargs):
@@ -83,11 +87,19 @@ class CmdOption(object):
         self.inverse = opt_dict.pop('inverse', '')
         self.help = opt_dict.pop('help', '')
 
+        # TODO support "choice"
+        # TODO add some hint for tab-completion scripts
+
         # options can not contain any unrecognized field
         if opt_dict:
             msg = "CmdOption dict contains invalid property '%s'"
             raise CmdParseError(msg % list(six.iterkeys(opt_dict)))
 
+
+    def __repr__(self):
+        tmpl = ("{0}({{'name':{1.name!r}, 'short':{1.short!r}," +
+                "'long':{1.long!r} }})")
+        return tmpl.format(self.__class__.__name__, self)
 
     @staticmethod
     def _print_2_columns(col1, col2):
@@ -102,6 +114,7 @@ class CmdOption(object):
         """return string of option's short and long name
         i.e.:   -f ARG, --file=ARG
         """
+        # TODO replace 'ARG' with metavar (copy from optparse)
         opts_str = []
         if self.short:
             if self.type is bool:
@@ -132,6 +145,7 @@ class CmdOption(object):
             opt_help = 'opposite of --%s' % self.long
             text.append(self._print_2_columns(opt_str, opt_help))
         return text
+
 
 
 class CmdParse(object):

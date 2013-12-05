@@ -23,7 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-__version__ = (0, 23, 0)
+__version__ = (0, 24, 0)
 
 
 # used to save variable values passed from command line
@@ -38,3 +38,8 @@ def get_var(name, default=None):
 
 def set_var(name, value):
     CMDLINE_VARS[name] = value
+
+
+# Directory path from where doit was executed.
+# Set by loader, to be used on dodo.py by users.
+initial_workdir = None

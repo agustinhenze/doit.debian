@@ -9,6 +9,7 @@ import pytest
 from doit.tools import create_folder
 
 DOIT_CONFIG = {
+    'minversion': '0.24.dev0',
     'default_tasks': ['checker', 'ut'],
 #    'backend': 'sqlite3',
     }
@@ -33,7 +34,7 @@ def task_checker():
         yield {'actions': ["pyflakes %(dependencies)s"],
                'name':module,
                'file_dep':(module,),
-               'task_dep':['_pyflakes_builtins'],
+               'setup':['_pyflakes_builtins'],
                'title': (lambda task: task.name)}
 
 def run_test(test):
