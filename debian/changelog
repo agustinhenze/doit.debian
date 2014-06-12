@@ -1,3 +1,10 @@
+doit (0.25.0-1) unstable; urgency=medium
+
+  * Imported Upstream version 0.25.0
+  * Disable test suite at debian package building time (Closes: #747956)
+
+ -- Agustin Henze <tin@debian.org>  Thu, 12 Jun 2014 20:17:08 -0300
+
 doit (0.24.0-1) unstable; urgency=medium
 
   * Change the url in debian/watch file
