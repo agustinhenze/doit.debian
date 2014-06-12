@@ -1,4 +1,5 @@
 import os
+import time
 import threading
 
 import pytest
@@ -67,6 +68,7 @@ class TestFileWatcher(object):
 
         # wait watcher to be ready
         while not started: # pragma: no cover
+            time.sleep(0.01)
             assert loop_thread.isAlive()
 
         # write in watched file
@@ -86,6 +88,7 @@ class TestFileWatcher(object):
         fd = open(stop_file, 'w')
         fd.write("hi")
         fd.close()
+        time.sleep(0.1)
         loop_thread.join(1)
         assert not loop_thread.isAlive()
 

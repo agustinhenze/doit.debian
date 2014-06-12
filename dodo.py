@@ -5,12 +5,15 @@ import os
 import subprocess
 
 import pytest
+from doitpy.pyflakes import Pyflakes
+from doitpy.coverage import Config, Coverage, PythonPackage
+
 
 from doit.tools import create_folder
 
 DOIT_CONFIG = {
     'minversion': '0.24.dev0',
-    'default_tasks': ['checker', 'ut'],
+    'default_tasks': ['pyflakes', 'ut'],
 #    'backend': 'sqlite3',
     }
 
@@ -20,22 +23,10 @@ TESTING_FILES = glob.glob("tests/*.py")
 PY_FILES = CODE_FILES + TESTING_FILES
 
 
-def task_checker():
-    """run pyflakes on all project files"""
-
-    def add_pyflakes_builtins():
-        os.environ['PYFLAKES_BUILTINS'] = 'unicode'
-    yield {
-        'basename': '_pyflakes_builtins',
-        'actions': [add_pyflakes_builtins]
-        }
-
-    for module in PY_FILES:
-        yield {'actions': ["pyflakes %(dependencies)s"],
-               'name':module,
-               'file_dep':(module,),
-               'setup':['_pyflakes_builtins'],
-               'title': (lambda task: task.name)}
+def task_pyflakes():
+    flaker = Pyflakes()
+    yield flaker.tasks('doit/*.py')
+    yield flaker.tasks('tests/*.py')
 
 def run_test(test):
     return not bool(pytest.main(test))
@@ -53,44 +44,14 @@ def task_ut():
 
 def task_coverage():
     """show coverage for all modules including tests"""
-    return {'actions':
-                ["coverage run --parallel-mode `which py.test` ",
-                 "coverage combine",
-                 ("coverage report --show-missing %s" %
-                  " ".join(CODE_FILES + TEST_FILES))
-                 ],
-            'verbosity': 2}
+    cov = Coverage([PythonPackage('doit', 'tests')],
+                   config=Config(branch=False, parallel=True,
+                          omit=['tests/myecho.py', 'tests/sample_process.py'],)
+                   )
+    yield cov.all()
+    yield cov.src()
+    yield cov.by_module()
 
-
-def task_coverage_code():
-    """show coverage for all modules (exclude tests)"""
-    return {'actions':
-                ["coverage run --parallel-mode `which py.test` ",
-                 "coverage combine",
-                 "coverage report --show-missing %s" % " ".join(CODE_FILES)],
-            'verbosity': 2}
-
-
-def task_coverage_module():
-    """show coverage for individual modules"""
-    to_strip = len('tests/test_')
-    for test in TEST_FILES:
-        source = "doit/" + test[to_strip:]
-        yield {'name': test,
-               'actions':
-                   ["coverage run --parallel-mode `which py.test` -v %s" % test,
-                    "coverage combine",
-                    "coverage report --show-missing %s %s" % (source, test)],
-               'verbosity': 2}
-
-
-############# python3
-
-def task_test3():
-    """run unitests on python3"""
-    return {'actions': ["py.test-3.2"],
-            'verbosity': 2,
-            }
 
 
 ############################ website
@@ -114,13 +75,15 @@ def task_spell():
     # spell always return successful code (0)
     # so this checks if the output is empty
     def check_no_output(doc_file):
-        cmd = 'hunspell -l -p doc/dictionary.txt %s'
+        # -l list misspelled words
+        # -p set path of personal dictionary
+        cmd = 'hunspell -l -d en_US -p doc/dictionary.txt %s'
         output = subprocess.check_output(cmd % doc_file, shell=True)
         if len(output) != 0:
             print(output)
             return False
 
-    for doc_file in glob.glob('doc/*.rst'):
+    for doc_file in glob.glob('doc/*.rst') + ['README.rst']:
         yield {
             'name': doc_file,
             'actions': [(check_no_output, (doc_file,))],

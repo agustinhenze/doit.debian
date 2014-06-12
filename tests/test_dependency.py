@@ -12,6 +12,9 @@ from doit.dependency import DbmDB, DatabaseException, UptodateCalculator
 from doit.dependency import JsonDependency, DbmDependency, SqliteDependency
 from .conftest import get_abspath, depfile
 
+#path to test folder
+TEST_PATH = os.path.dirname(__file__)
+PROGRAM = "python %s/sample_process.py" % TEST_PATH
 
 def test_unicode_md5():
     data = six.u("我")
@@ -27,11 +30,10 @@ def test_md5():
 
 
 ####
-# dependencies are files only (not other tasks), or bool.
+# dependencies are files only (not other tasks).
 #
 # whenever a task has a dependency the runner checks if this dependency
 # was modified since last successful run. if not the task is skipped.
-# if depedency is a bool. it is always up-to-date if present.
 
 # since more than one task might have the same dependency, and the tasks
 # might have different results (success/failure). the signature is associated
@@ -215,6 +217,7 @@ class TestSaveSuccess(object):
         pdepfile.save_success(t1)
         assert pdepfile._get("taskId_X",filePath) is not None
         assert pdepfile._get("taskId_X",filePath2) is not None
+        assert set(pdepfile._get("taskId_X", 'deps:')) == t1.file_dep
 
     def test_save_values(self, pdepfile):
         t1 = Task('t1', None)
@@ -336,6 +339,35 @@ class TestGetStatus(object):
         assert 'run' == pdepfile.get_status(t1, {})
         assert dependencies == t1.dep_changed
 
+    def test_fileDependencies_changed(self, pdepfile):
+        filePath = get_abspath("data/dependency1")
+        ff = open(filePath,"w")
+        ff.write("part1")
+        ff.close()
+
+        filePath2 = get_abspath("data/dependency2")
+        ff = open(filePath,"w")
+        ff.write("part1")
+        ff.close()
+
+        dependencies = [filePath, filePath2]
+        t1 = Task("t1", None, dependencies)
+
+        # first time execute
+        assert 'run' == pdepfile.get_status(t1, {})
+        assert sorted(dependencies) == sorted(t1.dep_changed)
+
+        # second time no
+        pdepfile.save_success(t1)
+        assert 'up-to-date' == pdepfile.get_status(t1, {})
+        assert [] == t1.dep_changed
+
+        # remove dependency filePath2
+        t1 = Task("t1", None, [filePath])
+        # execute again
+        assert 'run' == pdepfile.get_status(t1, {})
+        assert [] == t1.dep_changed
+
 
     def test_file_dependency_not_exist(self, pdepfile):
         filePath = get_abspath("data/dependency_not_exist")
@@ -431,6 +463,16 @@ class TestGetStatus(object):
         check = My_uptodate()
         t1 = Task("t1", None, uptodate=[check])
         assert 'up-to-date' == pdepfile.get_status(t1, task_dict)
+
+    def test_UptodateCommand_True(self, pdepfile):
+        t1 = Task("t1", None, uptodate=[PROGRAM])
+        pdepfile.save_success(t1)
+        assert 'up-to-date' == pdepfile.get_status(t1, {})
+
+    def test_UptodateCommand_False(self, pdepfile):
+        t1 = Task("t1", None, uptodate=[PROGRAM + ' please fail'])
+        pdepfile.save_success(t1)
+        assert 'run' == pdepfile.get_status(t1, {})
 
 
     # if target file does not exist, task is outdated.

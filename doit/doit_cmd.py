@@ -5,7 +5,7 @@ import sys
 import traceback
 import six
 
-import doit
+from .version import VERSION
 from .exceptions import InvalidDodoFile, InvalidCommand, InvalidTask
 from .cmdparse import CmdParseError
 from .cmd_base import DodoTaskLoader, DoitCmdBase
@@ -21,6 +21,21 @@ from .cmd_strace import Strace
 from .cmd_completion import TabCompletion
 
 
+# used to save variable values passed from command line
+_CMDLINE_VARS = None
+
+def reset_vars():
+    global _CMDLINE_VARS
+    _CMDLINE_VARS = {}
+
+def get_var(name, default=None):
+    return _CMDLINE_VARS.get(name, default)
+
+def set_var(name, value):
+    _CMDLINE_VARS[name] = value
+
+
+
 class DoitMain(object):
     DOIT_CMDS = (Help, Run, List, Clean, Forget, Ignore, Auto, DumpDB,
                  Strace, TabCompletion)
@@ -33,9 +48,8 @@ class DoitMain(object):
     @staticmethod
     def print_version():
         """print doit version (includes path location)"""
-        six.print_(".".join([str(i) for i in doit.__version__]))
-        six.print_("bin @", os.path.abspath(__file__))
-        six.print_("lib @", os.path.dirname(os.path.abspath(doit.__file__)))
+        six.print_(".".join([str(i) for i in VERSION]))
+        six.print_("lib @", os.path.dirname(os.path.abspath(__file__)))
 
 
     def get_commands(self):
@@ -57,12 +71,12 @@ class DoitMain(object):
         return list of args without processed variables
         """
         # get cmdline variables from args
-        doit.reset_vars()
+        reset_vars()
         args_no_vars = []
         for arg in cmd_args:
             if (arg[0] != '-') and ('=' in arg):
                 name, value = arg.split('=', 1)
-                doit.set_var(name, value)
+                set_var(name, value)
             else:
                 args_no_vars.append(arg)
         return args_no_vars
@@ -96,13 +110,14 @@ class DoitMain(object):
 
         # get specified sub-command or use default='run'
         if len(args) == 0 or args[0] not in list(six.iterkeys(self.sub_cmds)):
-            command = 'run'
+            cmd_name = 'run'
         else:
-            command = args.pop(0)
+            cmd_name = args.pop(0)
+        command = self.sub_cmds[cmd_name]
 
         # execute command
         try:
-            return self.sub_cmds[command].parse_execute(args)
+            return command.parse_execute(args)
 
         # dont show traceback for user errors.
         except (CmdParseError, InvalidDodoFile,
@@ -111,5 +126,8 @@ class DoitMain(object):
             return 3
 
         except Exception:
+            if command.opt_values.get('pdb'): # pragma: no cover
+                import pdb
+                pdb.post_mortem(sys.exc_info()[2])
             sys.stderr.write(traceback.format_exc())
             return 3

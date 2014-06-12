@@ -23,23 +23,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-__version__ = (0, 24, 0)
+from doit.version import VERSION
+
+__version__ = VERSION
 
 
-# used to save variable values passed from command line
-CMDLINE_VARS = None
+from doit import loader
+from doit.doit_cmd import get_var
+from doit.api import run
 
-def reset_vars():
-    global CMDLINE_VARS
-    CMDLINE_VARS = {}
+__all__ = ['get_var', 'run']
 
-def get_var(name, default=None):
-    return CMDLINE_VARS.get(name, default)
-
-def set_var(name, value):
-    CMDLINE_VARS[name] = value
-
-
-# Directory path from where doit was executed.
-# Set by loader, to be used on dodo.py by users.
-initial_workdir = None
+def get_initial_workdir():
+    return loader.initial_workdir

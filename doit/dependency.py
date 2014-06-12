@@ -2,6 +2,7 @@
 
 import os
 import hashlib
+import subprocess
 import six
 if six.PY3: # pragma: no cover
     from dbm import dumb
@@ -414,6 +415,10 @@ class DependencyBase(object):
             size = os.path.getsize(dep)
             self._set(task.name, dep, (timestamp, size, get_file_md5(dep)))
 
+        # save list of file_deps
+        self._set(task.name, 'deps:', tuple(task.file_dep))
+
+
 
     def get_values(self, task_name):
         """get all saved values from a task
@@ -476,6 +481,11 @@ class DependencyBase(object):
                     utd.setup(self, tasks_dict)
                 # 3) call it and get result
                 uptodate_result = utd(*args, **utd_kwargs)
+            elif isinstance(utd, six.string_types):
+                # TODO py3.3 has subprocess.DEVNULL
+                with open(os.devnull, 'wb') as null:
+                    uptodate_result = subprocess.call(
+                        utd, shell=True, stderr=null, stdout=null) == 0
             # parameter is a value
             else:
                 uptodate_result = utd
@@ -500,8 +510,12 @@ class DependencyBase(object):
                 return 'run'
 
         # check for modified file_dep
-        changed = []
-        status = 'up-to-date' # initial assumption
+        changed = [] # list of file_dep that changed
+        previous = self._get(task.name, 'deps:')
+        if previous and set(previous) != task.file_dep:
+             status = 'run'
+        else:
+            status = 'up-to-date' # initial assumption
         for dep in tuple(task.file_dep):
             try:
                 file_stat = os.stat(dep)

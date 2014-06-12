@@ -19,7 +19,8 @@ def task_cmd_params():
             'params':[{'name':'flag',
                        'short':'f',
                        'long': 'flag',
-                       'default': ''}],
+                       'default': '',
+                       'help': 'helpful message about this flag'}],
             'verbosity': 2
             }
 

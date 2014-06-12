@@ -387,8 +387,7 @@ class MRunner(Runner):
             else:
                 # success set values taken from subprocess result
                 catched_excp = None
-                task.result = result['result']
-                task.values = result['values']
+                task.update_from_pickle(result['task'])
                 for action, output in zip(task.actions, result['out']):
                     action.out = output
                 for action, output in zip(task.actions, result['err']):
@@ -456,15 +455,15 @@ class MRunner(Runner):
                 # so we need to get task from this process and update it
                 # to get dynamic task attributes.
                 task = self.tasks[recv_task.name]
-                if self.Child == Process:
+                if self.Child == Process: # pragma: no cover ...
+                    # ... actually covered but subprocess doesnt get it.
                     task.update_from_pickle(recv_task)
 
                 result = {'name': task.name}
                 t_result = self.execute_task(task)
 
                 if t_result is None:
-                    result['result'] = task.result
-                    result['values'] = task.values
+                    result['task'] = task
                     result['out'] = [a.out for a in task.actions]
                     result['err'] = [a.err for a in task.actions]
                 else:
@@ -480,7 +479,13 @@ class MRunner(Runner):
 class MThreadRunner(MRunner):
     """Parallel runner using threads"""
     Queue = staticmethod(queue.Queue)
-    Child = staticmethod(Thread)
+    # use a daemon thread to make sure process is terminated if there is
+    # an uncatch exception and threads are not correctly joined.
+    class DaemonThread(Thread):
+        def __init__(self, *args, **kwargs):
+            Thread.__init__(self, *args, **kwargs)
+            self.daemon = True
+    Child = staticmethod(DaemonThread)
 
     @staticmethod
     def available():
