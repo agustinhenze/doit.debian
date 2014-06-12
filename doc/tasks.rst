@@ -51,6 +51,7 @@ It can optionally define other attributes like `targets`, `file_dep`,
 
 Actions define what the task actually does.
 *Actions* is always a list that can have any number of elements.
+The actions of a task are always run sequentially.
 There 2 basic kinds of `actions`: *cmd-action* and *python-action*.
 The action "result" is used to determine if task execution was successful or not.
 
@@ -144,12 +145,13 @@ If the process exits with the value `0` it is successful.
 Any other value means the task failed.
 
 
+.. _custom-actions:
 
 custom actions
 ^^^^^^^^^^^^^^^^^^^
 
 It is possible to create other type of actions,
-check :ref:`tools.InteractiveAction<tools.InteractiveAction>` as an example.
+check :ref:`tools.LongRunning<tools.LongRunning>` as an example.
 
 
 
@@ -415,6 +417,124 @@ You can also select tasks to be executed using a `glob <http://docs.python.org/l
     .  create_file:file3.txt
 
 
+.. _parameters:
+
+parameters
+-----------
+
+It is possible to pass option parameters to the task through the command line.
+
+Just add a ``params`` field to the task dictionary. ``params`` must be a list of
+dictionaries where every entry is an option parameter. Each parameter must
+define a name, and a default value. It can optionally define a "short" and
+"long" names to be used from the command line (it follows unix command line
+conventions). It may also specify additional attributes, such as
+`type` and `help` (see :ref:`below <parameters-attributes>`).
+
+
+See the example:
+
+.. literalinclude:: tutorial/parameters.py
+
+
+For python-actions the python function must define arguments with the same name as a task parameter.
+
+.. code-block:: console
+
+    $ doit py_params -p abc --param2 4
+    .  py_params
+    abc
+    9
+
+For cmd-actions use python string substitution notation:
+
+.. code-block:: console
+
+    $ doit cmd_params -f "-c --other value"
+    .  cmd_params
+    mycmd -c --other value xxx
+
+
+
+.. _parameters-attributes:
+
+All parameters attributes
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Here is the list of all attributes ``param`` accepts:
+
+``name``
+    Name of the parameter, identifier used as name of the the parameter
+    on python code.
+    It should be unique among others.
+
+    :required:  True
+    :type:      `str`
+
+``default``
+    Default value used when it is set through command-line.
+
+    :required:  True
+
+``short``
+    Short parameter form, used for e.g. ``-p value``.
+
+    :required:  optional
+    :type:      `str`
+
+``long``
+    Long parameter form, used for e.g. ``--parameter value``
+    when it differs from its `name`.
+
+    :required:  optional
+    :type:      `str`
+
+``type``
+    Actually it can be any python callable.
+    It coverts the string value received from command line to whatever
+    value to be used on python code.
+
+    If the ``type`` is ``bool`` the parameter is treated as an *option flag*
+    where no value should be specified, value is set to ``True``.
+    Example: ``doit mytask --flag``.
+
+    :required:  optional
+    :type:      `callable` (e.g. a `function`)
+    :default:   `str`
+
+``help``
+    Help message associated to this parameter, shown when
+    :ref:`help <cmd-help>` is called for this task,
+    e.g. ``doit help mytask``.
+
+    :required:  optional
+    :type:      `str`
+
+``inverse``
+    [only for `bool` parameter]
+    Set inverse flag long parameter name, value will be set to ``False``
+    (see example below).
+
+    :required:  optional
+    :type:      `str`
+
+    Example, given following code:
+
+    .. literalinclude:: tutorial/parameters_inverse.py
+
+    calls to task `with_flag` show flag on or off:
+
+    .. code-block:: console
+
+        $ doit with_flag
+        .  with_flag
+        Flag On
+        $ doit with_flag --flagoff
+        .  with_flag
+        Flag Off
+
+
+
 .. _command line variables:
 
 command line variables (*doit.get_var*)
@@ -441,13 +561,65 @@ private/hidden tasks
 If task name starts with an underscore '_', it will not be included in the output.
 
 
+title
+-------
+
+By default when you run `doit` only the task name is printed out on the output.
+You can customize the output passing a "title" function to the task:
+
+.. literalinclude:: tutorial/title.py
+
+.. code-block:: console
+
+    $ doit
+    .  executing... Cmd: echo abc efg
+
+
+
+.. _verbosity:
+
+
+verbosity
+-----------
+
+By default the stdout from a task is captured and its stderr is sent to the
+console. If the task fails or there is an error the stdout and a traceback
+(if any) is displayed.
+
+There are 3 levels of verbosity:
+
+0:
+  capture (do not print) stdout/stderr from task.
+
+1 (default):
+  capture stdout only.
+
+2:
+  do not capture anything (print everything immediately).
+
+
+You can control the verbosity by:
+
+* task attribute verbosity
+
+.. literalinclude:: tutorial/verbosity.py
+
+.. code-block:: console
+
+    $ doit
+    .  print
+    hello
+
+* from command line, see :ref:`verbosity option<verbosity_option>`.
+
 .. _create-doit-tasks:
+
 
 custom task definition
 ------------------------
 
 Apart from collect functions that start with the name `task_`.
-The *doit* loader will also execute the `create_doit_tasks`
+The *doit* loader will also execute the ``create_doit_tasks``
 callable from any object that contains this attribute.
 
 
@@ -456,4 +628,37 @@ callable from any object that contains this attribute.
 The `project letsdoit <https://bitbucket.org/takluyver/letsdoit>`_
 has some real-world implementations.
 
-For simple examples to help you create your own check this `blog post <http://blog.schettino72.net/posts/doit-task-creation.html>`_.
+For simple examples to help you create your own check this
+`blog post <http://blog.schettino72.net/posts/doit-task-creation.html>`_.
+
+
+importing tasks
+---------------
+
+The *doit* loader will look at **all** objects in the namespace of the *dodo*.
+It will look for functions staring with ``task_`` and objects with
+``create_doit_tasks``.
+So it is also possible to load task definitions from other
+modules just by importing them into your *dodo* file.
+
+.. literalinclude:: tutorial/import_tasks.py
+
+.. code-block:: console
+
+    $ doit list
+    echo
+    hello
+    sample
+
+
+.. note::
+
+   Importing tasks from different modules is useful if you want to split
+   your task definitions in different modules.
+
+   The best way to create re-usable tasks that can be used in several projects
+   is to call functions that return task dict's.
+   For example take a look at a reusable *pyflakes*
+   `task generator <https://github.com/pydoit/doit-py/blob/master/doitpy/pyflakes.py>`_.
+   Check the project `doit-py <https://github.com/pydoit/doit-py>`_
+   for more examples.

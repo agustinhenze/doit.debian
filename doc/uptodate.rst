@@ -3,7 +3,7 @@ custom uptodate
 ================
 
 The basics of `uptodate` was already introduced. Here we look in more
-detail into the implementations shipped with `doit`. And the API used by those.
+detail into some implementations shipped with `doit`. And the API used by those.
 
 
 result-dependency
@@ -123,6 +123,7 @@ If a file is a target of another task you should probably add
 .. literalinclude:: tutorial/check_timestamp_unchanged.py
 
 
+.. _uptodate_api:
 
 uptodate API
 --------------

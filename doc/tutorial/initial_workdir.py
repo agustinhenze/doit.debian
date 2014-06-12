@@ -1,5 +1,5 @@
 ### README
-# Sample to test doit.initial_workdir
+# Sample to test doit.get_initial_workdir
 # First create a folder named 'sub1'.
 # Invoking doit from the root folder will execute both tasks 'base' and 'sub1'.
 # Invoking 'doit -k' from path 'sub1' will execute only task 'sub1'
@@ -17,7 +17,7 @@ DOIT_CONFIG = {
 
 # change default tasks based on dir from where doit was run
 sub1_dir = os.path.join(os.path.dirname(__file__), 'sub1')
-if doit.initial_workdir == sub1_dir:
+if doit.get_initial_workdir() == sub1_dir:
     DOIT_CONFIG['default_tasks'] = ['sub1']
 
 

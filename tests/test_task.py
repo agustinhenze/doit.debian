@@ -104,6 +104,10 @@ class TestTaskUpToDate(object):
                       uptodate=[(custom_check, [123], {'xxx':'yyy'})])
         assert t.uptodate[0] == (custom_check, [123], {'xxx':'yyy'})
 
+    def test_str(self):
+        t = task.Task("Task X", ["taskcmd"], uptodate=['my-cmd xxx'])
+        assert t.uptodate[0] == ('my-cmd xxx', [], {})
+
     def test_object_with_configure(self):
         class Check(object):
             def __call__(self): return True
@@ -428,6 +432,17 @@ class TestTaskDoc(object):
         t = task.Task("name", ["action"], doc="  \n  \n\n")
         assert "" == t.doc
 
+
+class TestTaskUpdateFromPickle(object):
+    def test_change_value(self):
+        t = task.Task("my_name", ["action"])
+        assert {} == t.values
+        class FakePickle():
+            def __init__(self):
+                self.values = [1,2,3]
+        t.update_from_pickle(FakePickle())
+        assert [1,2,3] == t.values
+        assert 'my_name' == t.name
 
 class TestDictToTask(object):
     def testDictOkMinimum(self):

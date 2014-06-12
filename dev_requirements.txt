@@ -5,5 +5,4 @@ pyflakes
 pytest
 mock
 coverage
-sphinx
-epydoc
+doit-py

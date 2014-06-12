@@ -1,7 +1,7 @@
 import inspect
 import sys
 
-import doit
+from . import version
 from .cmdparse import CmdOption, CmdParse
 from .exceptions import InvalidCommand, InvalidDodoFile
 from .dependency import backend_map
@@ -50,6 +50,7 @@ class Command(object):
         self.name = self.name or self.__class__.__name__.lower()
         Command.CMD_LIST.append(self.name)
         self.options = self.set_options()
+        self.opt_values = None # option values
 
     def set_options(self):
         """@reutrn list of CmdOption
@@ -73,6 +74,7 @@ class Command(object):
         @returns: result of self.execute
         """
         params, args = CmdParse(self.options).parse(in_args)
+        self.opt_values = params
         return self.execute(params, args)
 
 
@@ -246,12 +248,12 @@ class DoitCmdBase(Command):
         # check minversion
         minversion = self.config.get('minversion')
         if minversion:
-            if version_tuple(minversion) > version_tuple(doit.__version__):
+            if version_tuple(minversion) > version_tuple(version.VERSION):
                 msg = ('Please update doit. '
                 'Minimum version required is {required}. '
                 'You are using {actual}. ')
                 raise InvalidDodoFile(msg.format(required=minversion,
-                                                 actual=doit.__version__))
+                                                 actual=version.VERSION))
 
         # merge config values into params
         params.update_defaults(self.config)
