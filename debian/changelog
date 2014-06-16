@@ -1,3 +1,9 @@
+doit (0.25.0-2) unstable; urgency=medium
+
+  * Remove depends on python3.3 (Closes: #751643)
+
+ -- Agustin Henze <tin@debian.org>  Mon, 16 Jun 2014 11:40:07 -0300
+
 doit (0.25.0-1) unstable; urgency=medium
 
   * Imported Upstream version 0.25.0
