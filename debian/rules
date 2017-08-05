@@ -12,7 +12,7 @@ export PYBUILD_NAME=$(DEB_SOURCE)
 
 override_dh_bash-completion:
 	dh_bash-completion
-	cp zsh_completion_doit debian/zsh_completion_doit
+	cp zsh_completion_doit debian/python3-doit/usr/share/zsh/vendor-completions/_doit
 
 override_dh_auto_clean:
 	dh_auto_clean
