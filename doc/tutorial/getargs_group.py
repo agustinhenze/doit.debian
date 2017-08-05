@@ -10,8 +10,8 @@ def task_compute():
 
 
 def show_getargs(values):
-    print values
-    assert sum(v['x'] for v in values.itervalues()) == 12
+    print(values)
+    assert sum(v['x'] for v in values.values()) == 12
 
 def task_args_dict():
   return {'actions': [show_getargs],

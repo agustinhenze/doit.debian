@@ -3,8 +3,9 @@ import os
 import pytest
 
 from doit import version
-from doit.cmdparse import CmdParseError, CmdOption
+from doit.cmdparse import CmdParseError, CmdParse
 from doit.exceptions import InvalidCommand, InvalidDodoFile
+from doit.dependency import FileChangedChecker
 from doit.task import Task
 from doit.cmd_base import version_tuple, Command, DoitCmdBase
 from doit.cmd_base import ModuleTaskLoader, DodoTaskLoader
@@ -30,14 +31,14 @@ opt_rare = {'name': 'rare',
             'long': 'rare-bool',
             'type': bool,
             'default': False,
-            'help': 'help for opt2'}
+            'help': 'help for opt2 [default: %(default)s]'}
 
 opt_int = {'name': 'num',
            'short':'n',
            'long': 'number',
            'type': int,
            'default': 5,
-           'help': 'help for opt3'}
+           'help': 'help for opt3 [default: %(default)s]'}
 
 opt_no = {'name': 'no',
           'short':'',
@@ -53,21 +54,42 @@ class SampleCmd(Command):
     doc_usage = 'USAGE'
     doc_description = 'DESCRIPTION'
 
+    cmd_options = [opt_bool, opt_rare, opt_int, opt_no]
+
     @staticmethod
     def execute(params, args):
         return params, args
 
-    def set_options(self):
-        options = [opt_bool, opt_rare, opt_int, opt_no]
-        return [CmdOption(o) for o in options]
 
 class TestCommand(object):
 
-    @pytest.fixture
-    def cmd(self, request):
-        return SampleCmd()
+    def test_configure(self):
+        config = {'GLOBAL':{'foo':1, 'bar':'2'},
+                  'whatever':{'xxx': 'yyy'},
+                  'samplecmd': {'foo':4},
+        }
+        cmd = SampleCmd(config=config)
+        assert cmd.config == config
+        assert cmd.config_vals == {'foo':4, 'bar':'2'}
 
-    def test_help(self, cmd):
+    def test_call_value_cmd_line_arg(self):
+        cmd = SampleCmd()
+        params, args = cmd.parse_execute(['-n','7','ppp'])
+        assert ['ppp'] == args
+        assert 7 == params['num']
+
+    def test_call_value_option_default(self):
+        cmd = SampleCmd()
+        params, args = cmd.parse_execute([])
+        assert 5 == params['num']
+
+    def test_call_value_overwritten_default(self):
+        cmd = SampleCmd(config={'GLOBAL':{'num': 20}})
+        params, args = cmd.parse_execute([])
+        assert 20 == params['num']
+
+    def test_help(self):
+        cmd = SampleCmd(config={'GLOBAL':{'num': 20}})
         text = cmd.help()
         assert 'PURPOSE' in text
         assert 'USAGE' in text
@@ -75,17 +97,22 @@ class TestCommand(object):
         assert '-f' in text
         assert '--rare-bool' in text
         assert 'help for opt1' in text
-        assert opt_no['name'] in [o.name for o in cmd.options]
+        assert opt_no['name'] in [o.name for o in cmd.get_options()]
+
+        # option wihtout short and long are not displayed
         assert 'user cant modify me' not in text
 
+        # default value is displayed
+        assert "help for opt2 [default: False]" in text
 
-    def test_call(self, cmd):
-        params, args = cmd.parse_execute(['-n','7','ppp'])
-        assert ['ppp'] == args
-        assert 7 == params['num']
+        # overwritten default
+        assert "help for opt3 [default: 20]" in text
 
-    def test_failCall(self, cmd):
+
+    def test_failCall(self):
+        cmd = SampleCmd()
         pytest.raises(CmdParseError, cmd.parse_execute, ['-x','35'])
+
 
 
 class TestModuleTaskLoader(object):
@@ -145,20 +172,27 @@ class TestDoitCmdBase(object):
 
         members = {'task_xxx1': lambda : {'actions':[]},}
         loader = ModuleTaskLoader(members)
-        mycmd = MyRawCmd(loader)
+        mycmd = MyRawCmd(task_loader=loader, cmds={'foo':None, 'bar':None})
+        assert mycmd.loader.cmd_names == ['bar', 'foo']
         assert 'min' == mycmd.parse_execute(['--mine', 'min'])
 
+    # loader gets a reference to config
+    def test_loader_config(self, depfile_name):
+        mycmd = self.MyCmd(config={'foo':{'bar':'x'}})
+        assert mycmd.loader.config['foo'] == {'bar':'x'}
 
     # command with _execute() method
-    def test_execute(self):
+    def test_execute(self, depfile_name):
         members = {'task_xxx1': lambda : {'actions':[]},}
         loader = ModuleTaskLoader(members)
 
-        mycmd = self.MyCmd(loader)
-        assert 'min' == mycmd.parse_execute(['--mine', 'min'])
+        mycmd = self.MyCmd(task_loader=loader)
+        assert 'min' == mycmd.parse_execute([
+            '--db-file', depfile_name,
+            '--mine', 'min'])
 
     # command with _execute() method
-    def test_minversion(self, monkeypatch):
+    def test_minversion(self, depfile_name, monkeypatch):
         members = {
             'task_xxx1': lambda : {'actions':[]},
             'DOIT_CONFIG': {'minversion': '5.2.3'},
@@ -167,16 +201,51 @@ class TestDoitCmdBase(object):
 
         # version ok
         monkeypatch.setattr(version, 'VERSION', '7.5.8')
-        mycmd = self.MyCmd(loader)
-        assert 'xxx' == mycmd.parse_execute([])
+        mycmd = self.MyCmd(task_loader=loader)
+        assert 'xxx' == mycmd.parse_execute(['--db-file', depfile_name])
 
         # version too old
         monkeypatch.setattr(version, 'VERSION', '5.2.1')
-        mycmd = self.MyCmd(loader)
+        mycmd = self.MyCmd(task_loader=loader)
         pytest.raises(InvalidDodoFile, mycmd.parse_execute, [])
 
 
+    def testInvalidChecker(self):
+        mycmd = self.MyCmd(task_loader=ModuleTaskLoader({}))
+        params, args = CmdParse(mycmd.get_options()).parse([])
+        params['check_file_uptodate'] = 'i dont exist'
+        pytest.raises(InvalidCommand, mycmd.execute, params, args)
 
+
+    def testCustomChecker(self, depfile_name):
+        class MyChecker(FileChangedChecker):
+            pass
+
+        mycmd = self.MyCmd(task_loader=ModuleTaskLoader({}))
+        params, args = CmdParse(mycmd.get_options()).parse([])
+        params['check_file_uptodate'] = MyChecker
+        params['dep_file'] = depfile_name
+        mycmd.execute(params, args)
+        assert isinstance(mycmd.dep_manager.checker, MyChecker)
+
+
+    def testPluginBackend(self, depfile_name):
+        mycmd = self.MyCmd(task_loader=ModuleTaskLoader({}),
+                           config={'BACKEND': {'j2': 'doit.dependency:JsonDB'}})
+        params, args = CmdParse(mycmd.get_options()).parse(['--backend', 'j2'])
+        params['dep_file'] = depfile_name
+        mycmd.execute(params, args)
+        assert mycmd.dep_manager.db_class is mycmd._backends['j2']
+
+
+    def testPluginLoader(self, depfile_name):
+        entry_point = {'mod': 'tests.sample_plugin:MyLoader'}
+        mycmd = self.MyCmd(config={'GLOBAL': {'loader': 'mod'},
+                                   'LOADER': entry_point})
+        assert mycmd.loader.__class__.__name__ == 'MyLoader'
+        task_list, dodo_config = mycmd.loader.load_tasks(mycmd, {}, [])
+        assert task_list[0].name == 'sample_task'
+        assert dodo_config == {'verbosity': 2}
 
 class TestCheckTasksExist(object):
     def test_None(self):

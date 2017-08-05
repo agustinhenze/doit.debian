@@ -3,10 +3,8 @@
 import sys
 import time
 import datetime
-import six
-from six import StringIO
-
-from .compat import json
+import json
+from io import StringIO
 
 
 class ConsoleReporter(object):
@@ -15,6 +13,9 @@ class ConsoleReporter(object):
     @ivar show_out (bool): include captured stdout on failure report
     @ivar show_err (bool): include captured stderr on failure report
     """
+    # short description, used by the help system
+    desc = 'console output'
+
     def __init__(self, outstream, options):
         # save non-succesful result information (include task errors)
         self.failures = []
@@ -51,7 +52,8 @@ class ConsoleReporter(object):
 
     def skip_uptodate(self, task):
         """skipped up-to-date task"""
-        self.write("-- %s\n" % task.title())
+        if task.name[0] != '_':
+            self.write("-- %s\n" % task.title())
 
     def skip_ignore(self, task):
         """skipped ignored task"""
@@ -100,6 +102,8 @@ class ExecutedOnlyReporter(ConsoleReporter):
 
     Produces zero output unless a task is executed
     """
+    desc = 'console, no output for skipped (up-to-date) and group tasks'
+
     def skip_uptodate(self, task):
         """skipped up-to-date task"""
         pass
@@ -113,6 +117,8 @@ class ExecutedOnlyReporter(ConsoleReporter):
 
 class ZeroReporter(ConsoleReporter):
     """Report only internal errors from doit"""
+    desc = 'report only inetrnal errors from doit'
+
     def _just_pass(self, *args):
         """over-write base to do nothing"""
         pass
@@ -182,6 +188,9 @@ class JsonReporter(object):
          - started (str)
          - elapsed (float)
     """
+
+    desc = 'output in JSON format'
+
     def __init__(self, outstream, options=None): #pylint: disable=W0613
         # options parameter is not used
         # json result is sent to stdout when doit finishes running
@@ -245,18 +254,11 @@ class JsonReporter(object):
         if self.errors:
             log_err += "\n".join(self.errors)
 
-        task_result_list = [tr.to_dict() for tr in six.itervalues(self.t_results)]
+        task_result_list = [
+            tr.to_dict() for tr in self.t_results.values()]
         json_data = {'tasks': task_result_list,
                      'out': log_out,
                      'err': log_err}
         # indent not available on simplejson 1.3 (debian etch)
         # json.dump(json_data, sys.stdout, indent=4)
         json.dump(json_data, self.outstream)
-
-
-# name of reporters class available to be selected on cmd line
-REPORTERS = {'default': ConsoleReporter,
-             'executed-only': ExecutedOnlyReporter,
-             'json': JsonReporter,
-             'zero': ZeroReporter,
-             }

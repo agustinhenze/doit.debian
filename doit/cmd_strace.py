@@ -20,7 +20,6 @@ opt_show_all = {
 
 opt_keep_trace = {
     'name':'keep_trace',
-    'short':'k',
     'long':'keep',
     'type': bool,
     'default': False,
@@ -36,7 +35,7 @@ The output is a list of files prefixed with 'R' for open in read mode
 or 'W' for open in write mode.
 The files are listed in chronological order.
 
-This is a debugging feature wiht many lilmitations.
+This is a debugging feature with many limitations.
   * can strace only one task at a time
   * can only strace CmdAction
   * the process being traced itself might have some kind of cache,
@@ -78,10 +77,10 @@ So this is NOT 100% reliable, use with care!
         # add task to print report
         report_strace = Task(
             'strace_report',
-            actions = [(find_deps, [self.outstream, self.TRACE_OUT, show_all])],
-            verbosity = 2,
-            task_dep = [selected],
-            uptodate = [False],
+            actions=[(find_deps, [self.outstream, self.TRACE_OUT, show_all])],
+            verbosity=2,
+            task_dep=[selected],
+            uptodate=[False],
         )
         self.task_list.append(report_strace)
         self.sel_tasks.append(report_strace.name)
@@ -116,7 +115,8 @@ def find_deps(outstream, strace_out, show_all):
     # , (\[.*\])*          # ignore elments if inside [] - used by execve
     # (?P<mode>[^)]*)\)    # get mode opening file
     #  = ].*               # check syscall was successful""",
-    regex = re.compile(r'.*\("(?P<file>[^"]*)", (\[.*\])*(?P<mode>[^)]*)\) = [^-].*')
+    regex = re.compile(r'.*\("(?P<file>[^"]*)",' +
+                       r' (\[.*\])*(?P<mode>[^)]*)\) = [^-].*')
 
     read = set()
     write = set()

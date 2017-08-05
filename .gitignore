@@ -1,2 +1,17 @@
 *.pyc
+.doit.db
+doit.egg-info
+.coverage
+.cache
+dist
+MANIFEST.in
+revision.txt
+
 tests/data/*
+doc/_build
+doc/tutorial/*.o
+doc/tutorial/*.in
+doc/tutorial/*.out
+doc/tutorial/file*
+
+

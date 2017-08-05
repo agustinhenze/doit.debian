@@ -65,18 +65,10 @@ class List(DoitCmdBase):
                    opt_list_private, opt_list_dependencies, opt_template)
 
 
-    STATUS_MAP = {'ignore': 'I', 'up-to-date': 'U', 'run': 'R'}
+    STATUS_MAP = {'ignore': 'I', 'up-to-date': 'U', 'run': 'R', 'error': 'E'}
 
 
-    @property
-    def dep_manager(self):
-        """manager with access to task status (run, up-to-date...)"""
-        if not hasattr(self, '_dep_manager'):
-            self._dep_manager = self.dep_class(self.dep_file)
-        return self._dep_manager
-
-
-    def _print_task(self, template, task, status, list_deps):
+    def _print_task(self, template, task, status, list_deps, tasks):
         """print a single task"""
         line_data = {'name': task.name, 'doc':task.doc}
         # FIXME group task status is never up-to-date
@@ -85,7 +77,7 @@ class List(DoitCmdBase):
             if self.dep_manager.status_is_ignore(task):
                 task_status = 'ignore'
             else:
-                task_status = self.dep_manager.get_status(task, None)
+                task_status = self.dep_manager.get_status(task, tasks).status
             line_data['status'] = self.STATUS_MAP[task_status]
 
         self.outstream.write(template.format(**line_data))
@@ -111,7 +103,7 @@ class List(DoitCmdBase):
         return print_list
 
 
-    def _list_all(self, tasks, include_subtasks):
+    def _list_all(self, include_subtasks):
         """list of tasks"""
         print_list = []
         for task in self.task_list:
@@ -133,11 +125,11 @@ class List(DoitCmdBase):
             # list only tasks passed on command line
             print_list = self._list_filtered(tasks, filter_tasks, subtasks)
         else:
-            print_list = self._list_all(tasks, subtasks)
+            print_list = self._list_all(subtasks)
 
         # exclude private tasks
         if not private:
-            print_list = [t for t in print_list if (not t.name.startswith('_'))]
+            print_list = [t for t in print_list if not t.name.startswith('_')]
 
         # set template
         if template is None:
@@ -146,7 +138,7 @@ class List(DoitCmdBase):
                 max_name_len = max(len(t.name) for t in print_list)
 
             template = '{name:<' + str(max_name_len + 3) + '}'
-            if (not quiet):
+            if not quiet:
                 template += '{doc}'
             if status:
                 template = '{status} ' + template
@@ -154,5 +146,5 @@ class List(DoitCmdBase):
 
         # print list of tasks
         for task in sorted(print_list):
-            self._print_task(template, task, status, list_deps)
+            self._print_task(template, task, status, list_deps, tasks)
         return 0

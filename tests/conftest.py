@@ -1,17 +1,11 @@
 import os
 import time
-import multiprocessing
-import six
-if six.PY3: # pragma: no cover
-    from dbm import whichdb
-else:
-    from whichdb import whichdb
-
+from dbm import whichdb
 
 import py
 import pytest
 
-from doit.dependency import Dependency
+from doit.dependency import DbmDB, Dependency, MD5Checker
 from doit.task import Task
 
 
@@ -20,20 +14,28 @@ def get_abspath(relativePath):
     return os.path.join(os.path.dirname(__file__), relativePath)
 
 # fixture to create a sample file to be used as file_dep
-@pytest.fixture
-def dependency1(request):
-    path = get_abspath("data/dependency1")
-    if os.path.exists(path): os.remove(path)
-    ff = open(path, "w")
-    ff.write("whatever" + str(time.asctime()))
-    ff.close()
+def dependency_factory(relative_path):
 
-    def remove_dependency():
-        if os.path.exists(path):
-            os.remove(path)
-    request.addfinalizer(remove_dependency)
+    @pytest.fixture
+    def dependency(request):
+        path = get_abspath(relative_path)
+        if os.path.exists(path): os.remove(path)
+        ff = open(path, "w")
+        ff.write("whatever" + str(time.asctime()))
+        ff.close()
 
-    return path
+        def remove_dependency():
+            if os.path.exists(path):
+                os.remove(path)
+        request.addfinalizer(remove_dependency)
+
+        return path
+
+    return dependency
+
+
+dependency1 = dependency_factory("data/dependency1")
+dependency2 = dependency_factory("data/dependency2")
 
 # fixture to create a sample file to be used as file_dep
 @pytest.fixture
@@ -77,14 +79,14 @@ def depfile(request):
     if hasattr(request, 'param'):
         dep_class = request.param
     else:
-        dep_class = Dependency
+        dep_class = DbmDB
 
     # copied from tempdir plugin
     name = request._pyfuncitem.name
     name = py.std.re.sub("[\W]", "_", name)
     my_tmpdir = request.config._tmpdirhandler.mktemp(name, numbered=True)
-    dep_file = dep_class(os.path.join(my_tmpdir.strpath, "testdb"))
-    dep_file.whichdb = whichdb(dep_file.name)
+    dep_file = Dependency(dep_class, os.path.join(my_tmpdir.strpath, "testdb"))
+    dep_file.whichdb = whichdb(dep_file.name) if dep_class is DbmDB else 'XXX'
     dep_file.name_ext = db_ext.get(dep_file.whichdb, [''])
 
     def remove_depfile():
@@ -108,6 +110,10 @@ def depfile_name(request):
     request.addfinalizer(remove_depfile)
 
     return depfile_name
+
+@pytest.fixture
+def dep_manager(request, depfile_name):
+    return Dependency(DbmDB, depfile_name)
 
 
 @pytest.fixture
@@ -140,32 +146,28 @@ def tasks_sample():
     return tasks_sample
 
 
+def tasks_bad_sample():
+    """Create list of tasks that cause errors."""
+    bad_sample = [
+        Task("e1", [""], doc='e4 bad file dep', file_dep=['xxxx'])
+    ]
+    return bad_sample
 
-# mokey patch multiprocessing to enable  code coverage
-# NOTE: doesnt work with pytest-xdist (actually execnet)
-def coverage_multiprocessing_process(): # pragma: no cover
-    try:
-        import coverage as _coverage
-        _coverage
-    except:
-        return
 
-    from coverage.collector import Collector
-    from coverage.control import coverage
-    # detect if coverage was running in forked process
-    if Collector._collectors:
-        original = multiprocessing.Process._bootstrap
-        class Process_WithCoverage(multiprocessing.Process):
-            def _bootstrap(self):
-                cov = coverage(data_suffix=True)
-                cov.start()
-                try:
-                    return original(self)
-                finally:
-                    cov.stop()
-                    cov.save()
-        return Process_WithCoverage
+def CmdFactory(cls, outstream=None, task_loader=None, dep_file=None,
+               backend=None, task_list=None, sel_tasks=None,
+               dep_manager=None, config=None, cmds=None):
+    """helper for test code, so test can call _execute() directly"""
+    cmd = cls(task_loader=task_loader, config=config, cmds=cmds)
 
-ProcessCoverage = coverage_multiprocessing_process()
-if ProcessCoverage:
-    multiprocessing.Process = ProcessCoverage
+    if outstream:
+        cmd.outstream = outstream
+    if backend:
+        assert backend == "dbm" # the only one used on tests
+        cmd.dep_manager = Dependency(DbmDB, dep_file, MD5Checker)
+    elif dep_manager:
+        cmd.dep_manager = dep_manager
+    cmd.dep_file = dep_file    # (str) filename usually '.doit.db'
+    cmd.task_list = task_list  # list of tasks
+    cmd.sel_tasks = sel_tasks  # from command line or default_tasks
+    return cmd

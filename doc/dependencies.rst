@@ -41,15 +41,27 @@ writing your own callables for ``uptodate``. This callables will typically
 compare a value on the present time with a value calculated on the last
 successful execution.
 
+.. note::
+
+  There is no guarantee ``uptodate`` callables or commands will be executed.
+  `doit` short-circuit the checks, if it is already determined that the
+  task is no `up-to-date` it will not execute remaining ``uptodate`` checks.
+
+
 `doit` includes several implementations to be used as ``uptodate``.
 They are all included in module `doit.tools` and will be discussed in detail
-later:
+:ref:`later <uptodate_api>`:
 
-  * ``result_dep``: check if the result of another task has changed
-  * ``run_once``: execute a task only once (used for tasks without dependencies)
-  * ``timeout``: indicate that a task should "expire" after a certain time interval
-  * ``config_changed``: check for changes in a "configuration" string or dictionary
-  * ``check_timestamp_unchanged``: check access, status change/create or modify timestamp of a given file/directory
+  * :ref:`result_dep <result_dep>`: check if the result of another task
+    has changed
+  * :ref:`run_once <run_once>`: execute a task only once
+    (used for tasks without dependencies)
+  * :ref:`timeout <timeout>`: indicate that a task should "expire" after
+    a certain time interval
+  * :ref:`config_changed <config_changed>`: check for changes in
+    a "configuration" string or dictionary
+  * :ref:`check_timestamp_unchanged`: check access,
+    status change/create or modify timestamp of a given file/directory
 
 
 .. _up-to-date-def:
@@ -57,12 +69,35 @@ later:
 doit up-to-date definition
 -----------------------------
 
-A task is **not** up-to-date if any of `file_dep` or `uptodate` is not up-to-date
-or there is a missing `target`.
-If a task does not define any of these dependencies it will always be executed.
+A task is **not** up-to-date if any of:
 
-Apart from these dependencies used to determine if a task is up-to-date or not.
-``doit`` also includes other kind of dependencies to help you combine tasks
+  * an :ref:`uptodate <attr-uptodate>` item is (or evaluates to) `False`
+  * a file is added to or removed from `file_dep`
+  * a `file_dep` changed since last successful execution
+  * a `target` path does not exist
+  * a task has no `file_dep` and `uptodate` item equal to `True`
+
+It means that if a task does not explicitly define any *input* (dependency)
+it will never be considered `up-to-date`.
+
+Note that since a `target` represents an *output* of the task,
+a missing `target` is enough to determine that a task is not `up-to-date`.
+But its existence by itself is not enough to mark a task `up-to-date`.
+
+In some situations, it is useful to define a task with targets but no
+dependencies. If you want to re-execute this task only when targets are missing
+you must explicitly add a dependency: you could add a ``uptodate`` with ``True``
+value or use :ref:`run_once() <run_once>` to force at least one
+execution managed by `doit`. Example:
+
+.. literalinclude:: tutorial/touch.py
+
+
+
+Apart from ``file_dep`` and  ``uptodate`` used to determine if a task
+is `up-to-date` or not,
+``doit`` also includes other kind of dependencies (introduced below)
+to help you combine tasks
 so they are executed in appropriate order.
 
 
@@ -232,26 +267,3 @@ If a group-task is used, the values from all its sub-tasks are passed as a dict.
 .. note::
    ``getargs`` creates an implicit setup-task.
 
-
-
-keywords on actions
---------------------
-
-It is common situation to use task information such as *targets*,
-*dependencies*, or *changed* in its own actions.
-Note: Dependencies here refers only to *file-dependencies*.
-
-For *cmd-action* you can use the python notation for keyword substitution
-on strings. The string will contain all values separated by a space (" ").
-
-For *python-action* create a parameter in the function, `doit` will take care
-of passing the value when the function is called.
-The values are passed as list of strings.
-
-.. literalinclude:: tutorial/hello.py
-
-
-You can also pass the keyword *task* to have a reference to all task
-metadata.
-
-.. literalinclude:: tutorial/meta.py

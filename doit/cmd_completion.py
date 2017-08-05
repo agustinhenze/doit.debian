@@ -1,4 +1,4 @@
-"""generate shell script with tab complention code for doit commands/tasks"""
+"""generate shell script with tab completion code for doit commands/tasks"""
 
 import sys
 from string import Template
@@ -12,8 +12,9 @@ opt_shell = {
     'short': 's',
     'long': 'shell',
     'type': str,
+    'choices': (('bash', ''), ('zsh', '')),
     'default': 'bash',
-    'help': 'Completion code for SHELL. default: "bash". options: [bash, zsh]',
+    'help': 'Completion code for SHELL. [default: %(default)s]',
     }
 
 opt_hardcode_tasks = {
@@ -39,11 +40,18 @@ class TabCompletion(DoitCmdBase):
     it will always call doit while evaluating the options.
 
     """
-    doc_purpose = "generate script for tab-complention"
+    doc_purpose = "generate script for tab-completion"
     doc_usage = ""
     doc_description = None
 
     cmd_options = (opt_shell, opt_hardcode_tasks, )
+
+    def __init__(self, cmds=None, **kwargs):
+        super(TabCompletion, self).__init__(cmds=cmds, **kwargs)
+        self.init_kwargs = kwargs
+        self.init_kwargs['cmds'] = cmds
+        if cmds:
+            self.cmds = cmds.to_dict() # dict name - Command class
 
     def execute(self, opt_values, pos_args):
         if opt_values['shell'] == 'bash':
@@ -54,11 +62,25 @@ class TabCompletion(DoitCmdBase):
             msg = 'Invalid option for --shell "{0}"'
             raise InvalidCommand(msg.format(opt_values['shell']))
 
+    @classmethod
+    def _bash_cmd_args(cls, cmd):
+        """return case item for completion of specific sub-command"""
+        comp = []
+        if 'TASK' in cmd.doc_usage:
+            comp.append('${tasks}')
+        if 'COMMAND' in cmd.doc_usage:
+            comp.append('${sub_cmds}')
+        if comp:
+            completion = '-W "{0}"'.format(' '.join(comp))
+        else:
+            completion = '-f' # complete file
+        return bash_subcmd_arg.format(cmd_name=cmd.name, completion=completion)
+
 
     def _generate_bash(self, opt_values, pos_args):
         # some applications built with doit do not use dodo.py files
-        for opt in self.options:
-            if opt.name=='dodoFile':
+        for opt in self.get_options():
+            if opt.name == 'dodoFile':
                 get_dodo_part = bash_get_dodo
                 pt_list_param = '--file="$dodof"'
                 break
@@ -70,23 +92,34 @@ class TabCompletion(DoitCmdBase):
         pt_bin_name = sys.argv[0].split('/')[-1]
         tmpl_vars = {
             'pt_bin_name': pt_bin_name,
-            'pt_cmds': ' '.join(self.doit_app.sub_cmds),
+            'pt_cmds': ' '.join(sorted(self.cmds)),
             'pt_list_param': pt_list_param,
             }
 
         # if hardcode tasks
         if opt_values['hardcode_tasks']:
-            self.task_list, self.config = self._loader.load_tasks(
+            self.task_list, _ = self.loader.load_tasks(
                 self, opt_values, pos_args)
-            tmpl_vars['pt_tasks'] = '"{0}"'.format(
-                ' '.join(t.name for t in self.task_list if not t.is_subtask))
+            task_names = (t.name for t in self.task_list if not t.is_subtask)
+            tmpl_vars['pt_tasks'] = '"{0}"'.format(' '.join(sorted(task_names)))
         else:
             tmpl_list_cmd = "$({0} list {1} --quiet 2>/dev/null)"
             tmpl_vars['pt_tasks'] = tmpl_list_cmd.format(pt_bin_name,
                                                          pt_list_param)
 
+        # case statement to complete sub-commands
+        cmds_args = []
+        for name in sorted(self.cmds):
+            cmd_class = self.cmds[name]
+            cmd = cmd_class(**self.init_kwargs)
+            cmds_args.append(self._bash_cmd_args(cmd))
+        comp_subcmds = ("\n    case ${words[1]} in\n" +
+                        "".join(cmds_args) +
+                        "\n    esac\n")
+
         template = Template(bash_start + bash_opt_file + get_dodo_part +
-                            bash_task_list + bash_end)
+                            bash_task_list + bash_first_arg +
+                            comp_subcmds + bash_end)
         self.outstream.write(template.safe_substitute(tmpl_vars))
 
 
@@ -96,15 +129,15 @@ class TabCompletion(DoitCmdBase):
         # '(-c|--continue)'{-c,--continue}'[continue executing tasks...]' \
         # '--db-file[file used to save successful runs]' \
         if opt.short and opt.long:
-            tmpl = ("'(-{0.short}|--{0.long})'{{-{0.short},--{0.long}}}'"
-                    "[{help}]' \\")
+            tmpl = ('"(-{0.short}|--{0.long})"{{-{0.short},--{0.long}}}"'
+                    '[{help}]" \\')
         elif not opt.short and opt.long:
-            tmpl = "'--{0.long}[{help}]' \\"
+            tmpl = '"--{0.long}[{help}]" \\'
         elif opt.short and not opt.long:
-            tmpl = "'-{0.short}[{help}]' \\"
+            tmpl = '"-{0.short}[{help}]" \\'
         else: # without short or long options cant be really used
             return ''
-        ohelp = opt.help.replace(']', '\]')
+        ohelp = opt.help.replace(']', r'\]').replace('"', r'\"')
         return tmpl.format(opt, help=ohelp).replace('\n', ' ')
 
 
@@ -112,7 +145,7 @@ class TabCompletion(DoitCmdBase):
     def _zsh_arg_list(cls, cmd):
         """return list of arguments lines for zsh completion"""
         args = []
-        for opt in cmd.options:
+        for opt in cmd.get_options():
             args.append(cls._zsh_arg_line(opt))
         if 'TASK' in cmd.doc_usage:
             args.append("'*::task:(($tasks))'")
@@ -144,7 +177,9 @@ class TabCompletion(DoitCmdBase):
         # deal with doit commands
         cmds_desc = []
         cmds_args = []
-        for cmd in self.doit_app.sub_cmds.values():
+        for name in sorted(self.cmds):
+            cmd_class = self.cmds[name]
+            cmd = cmd_class(**self.init_kwargs)
             cmds_desc.append("    '{0}: {1}'".format(cmd.name, cmd.doc_purpose))
             cmds_args.append(self._zsh_cmd_args(cmd))
 
@@ -155,16 +190,18 @@ class TabCompletion(DoitCmdBase):
         }
 
         if opt_values['hardcode_tasks']:
-            self.task_list, self.config = self._loader.load_tasks(
+            self.task_list, _ = self.loader.load_tasks(
                 self, opt_values, pos_args)
             lines = []
             for task in self.task_list:
                 if not task.is_subtask:
                     lines.append("'{0}: {1}'".format(task.name, task.doc))
-            template_vars['pt_tasks'] = '(\n{0}\n)'.format('\n'.join(lines))
+            template_vars['pt_tasks'] = '(\n{0}\n)'.format(
+                '\n'.join(sorted(lines)))
         else:
-            tmpl_tasks = Template('''("${(f)$($pt_bin_name list --template '{name}: {doc}')}")''')
-            template_vars['pt_tasks'] = tmpl_tasks.safe_substitute(template_vars)
+            tmp_tasks = Template(
+                '''("${(f)$($pt_bin_name list --template '{name}: {doc}')}")''')
+            template_vars['pt_tasks'] = tmp_tasks.safe_substitute(template_vars)
 
 
         template = Template(zsh_start)
@@ -184,7 +221,7 @@ class TabCompletion(DoitCmdBase):
 
 
 bash_start = """# bash completion for $pt_bin_name
-# auto-generate by `$pt_bin_name tabcomplention`
+# auto-generate by `$pt_bin_name tabcompletion`
 
 # to activate it you need to 'source' the generate script
 # $ source <generated-script>
@@ -262,25 +299,27 @@ bash_task_list = """
 
 """
 
-bash_end = """
+bash_first_arg = """
     # match for first parameter must be sub-command or task
     # FIXME doit accepts options "-" in the first parameter but we ignore this case
     if [[ ${cword} == 1 ]] ; then
         COMPREPLY=( $(compgen -W "${sub_cmds} ${tasks}" -- ${cur}) )
         return 0
     fi
+"""
 
-    # if command is help complete with tasks or sub-commands
-    if [[ ${words[1]} == "help" ]] ; then
-        COMPREPLY=( $(compgen -W "${sub_cmds} ${tasks}" -- ${cur}) )
-        return 0
-    fi
+bash_subcmd_arg = """
+        {cmd_name})
+            COMPREPLY=( $(compgen {completion} -- $cur) )
+            return 0
+            ;;"""
 
+bash_end = """
     # if there is already one parameter match only tasks (no commands)
     COMPREPLY=( $(compgen -W "${tasks}" -- ${cur}) )
 
 }
-complete -F _$pt_bin_name $pt_bin_name
+complete -o filenames -F _$pt_bin_name $pt_bin_name
 """
 
 
@@ -327,5 +366,5 @@ _$pt_bin_name() {
     return 0
 }
 
-_doit
+_$pt_bin_name
 """

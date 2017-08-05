@@ -4,11 +4,17 @@ from multiprocessing import Process
 import pytest
 
 from doit.cmdparse import DefaultUpdate
-from doit.exceptions import InvalidCommand
 from doit.task import Task
 from doit.cmd_base import TaskLoader
+from doit import filewatch
 from doit import cmd_auto
+from .conftest import CmdFactory
 
+
+# skip all tests in this module if platform not supported
+platform = filewatch.get_platform_system()
+pytestmark = pytest.mark.skipif(
+    'platform not in filewatch.FileModifyWatcher.supported_platforms')
 
 
 class TestFindFileDeps(object):
@@ -48,8 +54,36 @@ class TestAuto(object):
 
     def test_invalid_args(self, dependency1, depfile_name):
         t1 = Task("t1", [""], file_dep=[dependency1])
-        cmd = cmd_auto.Auto(task_loader=FakeLoader([t1], depfile_name))
-        pytest.raises(InvalidCommand, cmd.execute, None, 't2')
+        task_loader = FakeLoader([t1], depfile_name)
+        cmd = CmdFactory(cmd_auto.Auto, task_loader=task_loader)
+        # terminates with error number
+        assert cmd.parse_execute(['t2']) == 3
+
+
+    def test_run_callback(self, monkeypatch):
+        result = []
+        def mock_cmd(callback, shell=None):
+            result.append(callback)
+        monkeypatch.setattr(cmd_auto, 'call', mock_cmd)
+
+        # success
+        result = []
+        cmd_auto.Auto._run_callback(0, 'success', 'failure')
+        assert 'success' == result[0]
+
+        # failure
+        result = []
+        cmd_auto.Auto._run_callback(3, 'success', 'failure')
+        assert 'failure' == result[0]
+
+        # nothing executed
+        result = []
+        cmd_auto.Auto._run_callback(0, None , None)
+        assert 0 == len(result)
+        cmd_auto.Auto._run_callback(1, None , None)
+        assert 0 == len(result)
+
+
 
 
     def test_run_wait(self, dependency1, target1, depfile_name):
@@ -57,7 +91,8 @@ class TestAuto(object):
             with open(target1, 'w') as fp:
                 fp.write('ok')
         t1 = Task("t1", [ok], file_dep=[dependency1])
-        cmd = cmd_auto.Auto(task_loader=FakeLoader([t1], depfile_name))
+        cmd = CmdFactory(cmd_auto.Auto,
+                         task_loader=FakeLoader([t1], depfile_name))
 
         run_wait_proc = Process(target=cmd.run_watch,
                                 args=(DefaultUpdate(), []))
@@ -109,7 +144,5 @@ class TestAuto(object):
             raise KeyboardInterrupt()
         monkeypatch.setattr(cmd_auto.Process, 'join', join_interrupt)
 
-        cmd = cmd_auto.Auto()
+        cmd = CmdFactory(cmd_auto.Auto)
         cmd.execute(None, None)
-
-

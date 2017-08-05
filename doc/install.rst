@@ -4,11 +4,14 @@ Installing
 
 
 
-* Using `pip <http://pip.openplans.org/>`_ or
-  `easy_install <http://peak.telecommunity.com/DevCenter/EasyInstall>`_::
+* Using `pip <http://pip.pypa.io/>`_::
 
   $ pip install doit
-  $ easy_install doit
+
+Latest version of `doit` supports only python 3.
+If you are using python 2::
+
+  $ pip install doit==0.29.0
 
 * `Download <http://pypi.python.org/pypi/doit>`_ the source and::
 
@@ -16,19 +19,10 @@ Installing
 
 * Get latest development version::
 
-  $ hg clone https://bitbucket.org/schettino72/doit
+  $ git clone https://github.com/pydoit/doit.git
 
 
 .. note::
   * `doit` depends on the packages
     `pyinotify <http://trac.dbzteam.org/pyinotify>`_ (for linux),
     `macfsevents <http://pypi.python.org/pypi/MacFSEvents>`_ (mac).
-
-.. warning::
-
-   for Windows users:
-
-   * New releases are not tested on Windows.
-
-   * There is a bug on setuptools. Check this
-     `bug <http://bugs.launchpad.net/doit/+bug/218276>`_ for instructions.

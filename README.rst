@@ -4,17 +4,22 @@ README
 
 .. display some badges
 
-.. image:: https://pypip.in/v/doit/badge.png
-        :target: https://pypi.python.org/pypi/doit
-
-.. image:: https://pypip.in/d/doit/badge.png
+.. image:: https://img.shields.io/pypi/v/doit.svg
         :target: https://pypi.python.org/pypi/doit
 
 .. image:: https://travis-ci.org/pydoit/doit.png?branch=master
-  :target: https://travis-ci.org/pydoit/doit
+    :target: https://travis-ci.org/pydoit/doit
+
+.. image:: https://ci.appveyor.com/api/projects/status/f7f97iywo8y7fe4d/branch/master?svg=true
+    :target: https://ci.appveyor.com/project/schettino72/doit/branch/master
 
 .. image:: https://coveralls.io/repos/pydoit/doit/badge.png?branch=master
   :target: https://coveralls.io/r/pydoit/doit?branch=master
+
+
+.. image:: https://badges.gitter.im/Join%20Chat.svg
+  :alt: Join the chat at https://gitter.im/pydoit/doit
+  :target: https://gitter.im/pydoit/doit?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 
 
 doit - automation tool
@@ -27,16 +32,17 @@ execute any kind of task
 Project Details
 ===============
 
- - Source code & Project management on bitbucket - https://bitbucket.org/schettino72/doit
  - Website & docs - http://pydoit.org
+ - Project management on github - https://github.com/pydoit/doit
  - Discussion group - https://groups.google.com/forum/#!forum/python-doit
- - Official github mirror at - https://github.com/pydoit/doit
+ - News/twitter - https://twitter.com/py_doit
+ - Plugins, extensions and projects based on doit - https://github.com/pydoit/doit/wiki/powered-by-doit
 
 license
 =======
 
 The MIT License
-Copyright (c) 2008-2013 Eduardo Naufel Schettino
+Copyright (c) 2008-2015 Eduardo Naufel Schettino
 
 see LICENSE file
 
@@ -50,7 +56,9 @@ see AUTHORS file
 install
 =======
 
-*doit* is tested on python 2.6, 2.7, 3.2, 3.3, 3.4.
+*doit* is tested on python 3.3, 3.4, 3.5.
+
+The last version supporting python 2 is version 0.29.
 
 ::
 
@@ -60,19 +68,20 @@ install
 dependencies
 =============
 
-- six
+- cloudpickle
 - pyinotify (linux)
 - macfsevents (mac)
 
 Tools required for development:
 
-- mercurial * VCS
+- git * VCS
 - py.test * unit-tests
 - mock * unit-tests
 - coverage * code coverage
 - epydoc * API doc generator
 - sphinx * doc tool
 - pyflakes * syntax checker
+- doit-py * helper to run dev tasks
 
 
 development setup
@@ -92,16 +101,25 @@ from `dev_requirements.txt`::
   (dev)doit$ pip install --editable .
   (dev)doit$ pip install --requirement dev_requirements.txt
 
+.. note::
+
+    Windows developers: Due to a  bug in `wheel` distributions
+    `pytest` must not be installed from a `wheel`.
+
+    e.g.::
+
+      pip install pytest --no-use-wheel
+
+    See for more information:
+
+      - https://github.com/pytest-dev/pytest/issues/749
+      - https://bitbucket.org/pytest-dev/pytest/issues/749/
 
 
 tests
 =======
 
-You can use the standalone script::
-
-  $ python runtests.py
-
-or use py.test - http://pytest.org
+Use py.test - http://pytest.org
 
 ::
 
@@ -127,34 +145,32 @@ To create it (after installing *doit*)::
 The website will also includes epydoc generated API documentation.
 
 
+spell checking
+--------------
+
+All documentation is spell checked using the task `spell`::
+
+  $ doit spell
+
+It is a bit annoying that code snippets and names always fails the check,
+these words must be added into the file `doc/dictionary.txt`.
+
+The spell checker currently uses `hunspell`, to install it on debian based
+systems install the hunspell package: `apt-get install hunspell`.
+
+
+profiling
+---------
+
+::
+
+  python -m cProfile -o output.pstats `which doit` list
+
+  gprof2dot -f pstats output.pstats | dot -Tpng -o output.png
+
 contributing
 ==============
 
-On bitbucket create pull requests on ``default`` branch.
-
 On github create pull requests using a named feature branch.
 
-
-github mirror setup
-=====================
-
-This is only needed if you will manage both upstream in github and bitbucket.
-For using github only just use `git` normally and ignore it is a mirror.
-
-* install hg-git (http://hg-git.github.io/) ``sudo pip install hg-git``.
-
-* enable the extension. on ``~/.hgrc``::
-
-    [extensions]
-    hggit =
-
-* add a named path ``github`` on ``doit/.hg/hgrc``::
-
-    [paths]
-    default = https://bitbucket.org/schettino72/doit
-    github = git+ssh://git@github.com/pydoit/doit.git
-
-* make sure you have a ssh key registered on github ::
-
-   $ hg push github
 

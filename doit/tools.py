@@ -6,25 +6,23 @@ import datetime
 import hashlib
 import operator
 import subprocess
-import six
 
 from . import exceptions
-from .dependency import UptodateCalculator
 from .action import CmdAction, PythonAction
-
+from .task import result_dep # imported for backward compatibility
+result_dep # pyflakes
 
 # action
 def create_folder(dir_path):
     """create a folder in the given path if it doesnt exist yet."""
-    if not (os.path.exists(dir_path) and os.path.isdir(dir_path)):
-        os.makedirs(dir_path)
+    os.makedirs(dir_path, exist_ok=True)
 
 
 # title
 def title_with_actions(task):
     """return task name task actions"""
     if task.actions:
-        title = "\n\t".join([six.text_type(action) for action in task.actions])
+        title = "\n\t".join([str(action) for action in task.actions])
     # A task that contains no actions at all
     # is used as group task
     else:
@@ -46,50 +44,6 @@ def run_once(task, values):
 
 
 # uptodate
-class result_dep(UptodateCalculator):
-    """check if result of the given task was modified
-    """
-    def __init__(self, dep_task_name):
-        self.dep_name = dep_task_name
-        self.result_name = '_result:%s' % self.dep_name
-
-    def configure_task(self, task):
-        """to be called by doit when create the task"""
-        # result_dep creates an implicit task_dep
-        task.task_dep.append(self.dep_name)
-
-    def _result_single(self):
-        """get result from a single task"""
-        return self.get_val(self.dep_name, 'result:')
-
-    def _result_group(self, dep_task):
-        """get result from a group task
-        the result is the combination of results of all sub-tasks
-        """
-        prefix = dep_task.name + ":"
-        sub_tasks = {}
-        for sub in dep_task.task_dep:
-            if sub.startswith(prefix):
-                sub_tasks[sub] = self.get_val(sub, 'result:')
-        return sub_tasks
-
-    def __call__(self, task, values):
-        """return True if result is the same as last run"""
-        dep_task = self.tasks_dict[self.dep_name]
-        if not dep_task.has_subtask:
-            dep_result = self._result_single()
-        else:
-            dep_result = self._result_group(dep_task)
-        task.value_savers.append(lambda: {self.result_name: dep_result})
-
-        last_success = values.get(self.result_name)
-        if last_success is None:
-            return False
-        return (last_success == dep_result)
-
-
-
-# uptodate
 class config_changed(object):
     """check if passed config was modified
     @var config (str) or (dict)
@@ -99,16 +53,13 @@ class config_changed(object):
         self.config_digest = None
 
     def _calc_digest(self):
-        if isinstance(self.config, six.string_types):
+        if isinstance(self.config, str):
             return self.config
         elif isinstance(self.config, dict):
             data = ''
             for key in sorted(self.config):
                 data += key + repr(self.config[key])
-            if isinstance(data, six.text_type): # pragma: no cover # python3
-                byte_data = data.encode("utf-8")
-            else:
-                byte_data = data
+            byte_data = data.encode("utf-8")
             return hashlib.md5(byte_data).hexdigest()
         else:
             raise Exception(('Invalid type of config_changed parameter got %s' +
@@ -267,7 +218,7 @@ class PythonInteractiveAction(PythonAction):
             returned_value = self.py_callable(*self.args, **kwargs)
         except Exception as exception:
             return exceptions.TaskError("PythonAction Error", exception)
-        if isinstance(returned_value, six.string_types):
+        if isinstance(returned_value, str):
             self.result = returned_value
         elif isinstance(returned_value, dict):
             self.values = returned_value
@@ -283,3 +234,60 @@ def set_trace(): # pragma: no cover
     import sys
     debugger = pdb.Pdb(stdin=sys.__stdin__, stdout=sys.__stdout__)
     debugger.set_trace(sys._getframe().f_back) #pylint: disable=W0212
+
+
+
+def register_doit_as_IPython_magic():  # pragma: no cover
+    """
+    Defines a ``%doit`` magic function[1] that discovers and execute tasks
+    from IPython's interactive variables (global namespace).
+
+    It will fail if not invoked from within an interactive IPython shell.
+
+    .. Tip::
+        To permanently add this magic-function to your IPython, create a new
+        script inside your startup-profile
+        (``~/.ipython/profile_default/startup/doit_magic.ipy``) with the
+        following content:
+
+            from doit.tools import register_doit_as_IPython_magic
+            register_doit_as_IPython_magic()
+
+    [1] http://ipython.org/ipython-doc/dev/interactive/tutorial.html#magic-functions
+    """
+    from IPython.core.magic import register_line_magic
+    from IPython.core.getipython import get_ipython
+
+    from doit.cmd_base import ModuleTaskLoader
+    from doit.doit_cmd import DoitMain
+
+    @register_line_magic
+    def doit(line):
+        """
+        Run *doit* with `task_creators` from all interactive variables
+        (IPython's global namespace).
+
+        Examples:
+
+            >>> %doit --help          ## Show help for options and arguments.
+
+            >>> def task_foo():
+                    return {'actions': ['echo hi IPython'],
+                            'verbosity': 2}
+
+            >>> %doit list            ## List any tasks discovered.
+            foo
+
+            >>> %doit                 ## Run any tasks.
+            .  foo
+            hi IPython
+
+        """
+        ip = get_ipython()
+        # Override db-files location inside ipython-profile dir,
+        # which is certainly writable.
+        prof_dir = ip.profile_dir.location
+        opt_vals = {'dep_file': os.path.join(prof_dir, 'db', '.doit.db')}
+        commander = DoitMain(ModuleTaskLoader(ip.user_module),
+                             extra_config={'GLOBAL': opt_vals})
+        commander.run(line.split())

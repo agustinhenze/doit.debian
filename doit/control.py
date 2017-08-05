@@ -1,11 +1,26 @@
 """Control tasks execution order"""
 import fnmatch
 from collections import deque
-import six
+from collections import OrderedDict
+import re
 
 from .exceptions import InvalidTask, InvalidCommand, InvalidDodoFile
-from .task import Task
+from .cmdparse import TaskParse, CmdOption
+from .task import Task, DelayedLoaded
+from .loader import generate_tasks
 
+
+class RegexGroup(object):
+    '''Helper to keep track of all delayed-tasks which regexp target
+    matches the target specified from command line.
+    '''
+    def __init__(self, target, tasks):
+        # target name specified in command line
+        self.target = target
+        # set of delayed-tasks names (string)
+        self.tasks = tasks
+        # keep track if the target was already found
+        self.found = False
 
 
 class TaskControl(object):
@@ -26,9 +41,10 @@ class TaskControl(object):
                           Value: task_name
     """
 
-    def __init__(self, task_list):
-        self.tasks = {}
+    def __init__(self, task_list, auto_delayed_regex=False):
+        self.tasks = OrderedDict()
         self.targets = {}
+        self.auto_delayed_regex = auto_delayed_regex
 
         # name of task in order to be executed
         # this the order as in the dodo file. the real execution
@@ -52,18 +68,18 @@ class TaskControl(object):
             self._def_order.append(task.name)
 
         # expand wild-card task-dependencies
-        for task in six.itervalues(self.tasks):
+        for task in self.tasks.values():
             for pattern in task.wild_dep:
                 task.task_dep.extend(self._get_wild_tasks(pattern))
 
         self._check_dep_names()
-        self._init_implicit_deps()
+        self.set_implicit_deps(self.targets, task_list)
 
 
     def _check_dep_names(self):
         """check if user input task_dep or setup_task that doesnt exist"""
         # check task-dependencies exist.
-        for task in six.itervalues(self.tasks):
+        for task in self.tasks.values():
             for dep in task.task_dep:
                 if dep not in self.tasks:
                     msg = "%s. Task dependency '%s' does not exist."
@@ -75,27 +91,39 @@ class TaskControl(object):
                     raise InvalidTask(msg % (task.name, setup_task))
 
 
-    def _init_implicit_deps(self):
-        """get task_dep based on file_dep on a target from another task"""
+    @staticmethod
+    def set_implicit_deps(targets, task_list):
+        """set/add task_dep based on file_dep on a target from another task
+        @param targets: (dict) fileName -> task_name
+        @param task_list: (list - Task) task with newly added file_dep
+        """
         # 1) create a dictionary associating every target->task. where the task
         # builds that target.
-        for task in six.itervalues(self.tasks):
+        for task in task_list:
             for target in task.targets:
-                if target in self.targets:
+                if target in targets:
                     msg = ("Two different tasks can't have a common target." +
                            "'%s' is a target for %s and %s.")
                     raise InvalidTask(msg % (target, task.name,
-                                             self.targets[target]))
-                self.targets[target] = task.name
+                                             targets[target]))
+                targets[target] = task.name
+
         # 2) now go through all dependencies and check if they are target from
         # another task.
-        for task in six.itervalues(self.tasks):
-            self.add_implicit_task_dep(self.targets, task, task.file_dep)
+        # FIXME - when used with delayed tasks needs to check if
+        #         any new target matches any old file_dep.
+        for task in task_list:
+            TaskControl.add_implicit_task_dep(targets, task, task.file_dep)
 
 
     @staticmethod
     def add_implicit_task_dep(targets, task, deps_list):
-        """add tasks which created targets are file_dep for this task"""
+        """add implicit task_dep for `task` for newly added `file_dep`
+
+        @param targets: (dict) fileName -> task_name
+        @param task: (Task) task with newly added file_dep
+        @param dep_list: (list - str): list of file_dep for task
+        """
         for dep in deps_list:
             if (dep in targets and targets[dep] not in task.task_dep):
                 task.task_dep.append(targets[dep])
@@ -113,16 +141,27 @@ class TaskControl(object):
     def _process_filter(self, task_selection):
         """process cmd line task options
         [task_name [-task_opt [opt_value]] ...] ...
+
+        @param task_selection: list of strings with task names/params or target
+        @return list of task names. Expanding glob and removed params
         """
         filter_list = []
         def add_filtered_task(seq, f_name):
-            """can be filter by target or task name """
+            """add task to list `filter_list` and set task.options from params
+            @return list - str: of elements not yet
+            """
             filter_list.append(f_name)
+            # only tasks specified by name can contain parameters
             if f_name in self.tasks:
                 # parse task_selection
                 the_task = self.tasks[f_name]
                 # remaining items are other tasks not positional options
-                the_task.options, seq = the_task.taskcmd.parse(seq)
+                taskcmd = TaskParse([CmdOption(opt) for opt in the_task.params])
+                the_task.options, seq = taskcmd.parse(seq)
+                # if task takes positional parameters set all as pos_arg_val
+                if the_task.pos_arg is not None:
+                    the_task.pos_arg_val = seq
+                    seq = []
             return seq
 
         # process...
@@ -142,7 +181,7 @@ class TaskControl(object):
     def _filter_tasks(self, task_selection):
         """Select tasks specified by filter.
 
-        filter can specify tasks to be execute by task name or target.
+        @param task_selection: list of strings with task names/params or target
         @return (list) of string. where elements are task name.
         """
         selected_task = []
@@ -152,19 +191,61 @@ class TaskControl(object):
             # by task name
             if filter_ in self.tasks:
                 selected_task.append(filter_)
+                continue
+
             # by target
-            elif filter_ in self.targets:
+            if filter_ in self.targets:
                 selected_task.append(self.targets[filter_])
-            else:
-                msg = ('cmd `run` invalid parameter: "%s".' +
-                       'Must be a task, or a target.\n' +
-                       'Type "doit list" to see available tasks')
-                raise InvalidCommand(msg % filter_)
+                continue
+
+            # if can not find name check if it is a sub-task of a delayed
+            basename = filter_.split(':', 1)[0]
+            if basename in self.tasks:
+                loader = self.tasks[basename].loader
+                if not loader:
+                    raise InvalidCommand(not_found=filter_)
+                loader.basename = basename
+                self.tasks[filter_] = Task(filter_, None, loader=loader)
+                selected_task.append(filter_)
+                continue
+
+            # check if target matches any regex
+            delayed_matched = []  # list of Task
+            for task in list(self.tasks.values()):
+                if not task.loader:
+                    continue
+                if task.name.startswith('_regex_target'):
+                    continue
+                if task.loader.target_regex:
+                    if re.match(task.loader.target_regex, filter_):
+                        delayed_matched.append(task)
+                elif self.auto_delayed_regex:
+                    delayed_matched.append(task)
+            delayed_matched_names = [t.name for t in delayed_matched]
+            regex_group = RegexGroup(filter_, set(delayed_matched_names))
+
+            # create extra tasks to load delayed tasks matched by regex
+            for task in delayed_matched:
+                loader = task.loader
+                loader.basename = task.name
+                name = '{}_{}:{}'.format('_regex_target', filter_, task.name)
+                loader.regex_groups[name] = regex_group
+                self.tasks[name] = Task(name, None,
+                                        loader=loader,
+                                        file_dep=[filter_])
+                selected_task.append(name)
+
+            if not delayed_matched:
+                # not found
+                raise InvalidCommand(not_found=filter_)
         return selected_task
 
 
     def process(self, task_selection):
-        """@return (list - string) each element is the name of a task"""
+        """
+        @param task_selection: list of strings with task names/params
+        @return (list - string) each element is the name of a task
+        """
         # execute only tasks in the filter in the order specified by filter
         if task_selection is not None:
             self.selected_tasks = self._filter_tasks(task_selection)
@@ -188,7 +269,7 @@ class ExecNode(object):
     """Each task will have an instace of this
     This used to keep track of waiting events and the generator for dep nodes
 
-    @ivar run_status (str): contains the result of Dependency.get_status
+    @ivar run_status (str): contains the result of Dependency.get_status().status
             modified by runner, value can be:
            - None: not processed yet
            - run: task is selected to be executed (it might be running or
@@ -228,6 +309,13 @@ class ExecNode(object):
 
         # generator from TaskDispatcher._add_task
         self.generator = None
+
+    def reset_task(self, task, generator):
+        """reset task & generator after task is created by its own `loader`"""
+        self.task = task
+        self.task_dep = task.task_dep[:]
+        self.calc_dep = task.calc_dep.copy()
+        self.generator = generator
 
     def parent_status(self, parent_node):
         if parent_node.run_status == 'failure':
@@ -298,14 +386,18 @@ class TaskDispatcher(object):
         @param task_list (list - str) tasks that node should wait for
         @param calc (bool) task_list is for calc_dep
         """
-        # remove tasks that were already executed from task_list
+        # wait_for: contains tasks that `node` needs to wait for and
+        # were not executed yet.
         wait_for = set()
         for name in task_list:
             dep_node = self.nodes[name]
             if (not dep_node) or dep_node.run_status in (None, 'run'):
                 wait_for.add(name)
             else:
+                # if dep task was already executed:
+                # a) set parent status
                 node.parent_status(dep_node)
+                # b) update dependencies from calc_dep results
                 if calc:
                     self._process_calc_dep_results(dep_node, node)
 
@@ -334,6 +426,13 @@ class TaskDispatcher(object):
         """
         this_task = node.task
 
+        # skip this task if task belongs to a regex_group that already
+        # executed the task used to build the given target
+        if this_task.loader:
+            regex_group = this_task.loader.regex_groups.get(this_task.name, None)
+            if regex_group and regex_group.found:
+                return
+
         # add calc_dep & task_dep until all processed
         # calc_dep may add more deps so need to loop until nothing left
         while True:
@@ -351,12 +450,51 @@ class TaskDispatcher(object):
                 yield self._gen_node(node, task_dep)
             self._node_add_wait_run(node, task_dep_list)
 
+            # do not wait until all possible task_dep are created
             if (node.calc_dep or node.task_dep):
                 continue # pragma: no cover # coverage cant catch this #198
             elif (node.wait_run or node.wait_run_calc):
                 yield 'wait'
             else:
                 break
+
+        # generate tasks from a DelayedLoader
+        if this_task.loader:
+            ref = this_task.loader.creator
+            to_load = this_task.loader.basename or this_task.name
+            this_loader = self.tasks[to_load].loader
+            if this_loader and not this_loader.created:
+                new_tasks = generate_tasks(to_load, ref(), ref.__doc__)
+                TaskControl.set_implicit_deps(self.targets, new_tasks)
+                for nt in new_tasks:
+                    if not nt.loader:
+                        nt.loader = DelayedLoaded
+                    self.tasks[nt.name] = nt
+            # check itself for implicit dep (used by regex_target)
+            TaskControl.add_implicit_task_dep(
+                self.targets, this_task, this_task.file_dep)
+
+            # remove file_dep since generated tasks are not required
+            # to really create the target (support multiple matches)
+            if regex_group:
+                this_task.file_dep = {}
+                if regex_group.target in self.targets:
+                    regex_group.found = True
+                else:
+                    regex_group.tasks.remove(this_task.loader.basename)
+                    if len(regex_group.tasks) == 0:
+                        # In case no task is left, we cannot find a task
+                        # generating this target. Print an error message!
+                        raise InvalidCommand(not_found=regex_group.target)
+
+            # mark this loader to not be executed again
+            this_task.loader.created = True
+            this_task.loader = DelayedLoaded
+
+            # this task was placeholder to execute the loader
+            # now it needs to be re-processed with the real task
+            yield "reset generator"
+            assert False, "This generator can not be used again"
 
         # add itself
         yield this_task
@@ -498,6 +636,11 @@ class TaskDispatcher(object):
             # got new ExecNode, add to ready_queue
             elif isinstance(next_step, ExecNode):
                 self.ready.append(next_step)
+
+            # node just performed a delayed creation of tasks, restart
+            elif next_step == "reset generator":
+                node.reset_task(self.tasks[node.task.name],
+                                self._add_task(node))
 
             # got 'wait', add ExecNode to waiting queue
             else:

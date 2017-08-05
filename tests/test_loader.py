@@ -1,12 +1,13 @@
 import os
+import inspect
 
 import pytest
 
-import doit
 from doit.exceptions import InvalidDodoFile, InvalidCommand
-from doit.task import InvalidTask, Task
+from doit.task import InvalidTask, DelayedLoader, Task
 from doit.loader import flat_generator, get_module
 from doit.loader import load_tasks, load_doit_config, generate_tasks
+from doit.loader import create_after
 
 
 class TestFlatGenerator(object):
@@ -50,15 +51,6 @@ class TestGetModule(object):
         fileName = os.path.join("i_dont_exist.py")
         pytest.raises(InvalidDodoFile, get_module, fileName, seek_parent=True)
 
-    def testSetCwd(self, restore_cwd):
-        initial_wd = os.getcwd()
-        fileName = os.path.join(os.path.dirname(__file__),"loader_sample.py")
-        cwd = os.path.join(os.path.dirname(__file__), "data")
-        assert cwd != initial_wd # make sure test is not too easy
-        get_module(fileName, cwd)
-        assert os.getcwd() == cwd, os.getcwd()
-        assert doit.get_initial_workdir() == initial_wd
-
     def testInvalidCwd(self, restore_cwd):
         fileName = os.path.join(os.path.dirname(__file__),"loader_sample.py")
         cwd = os.path.join(os.path.dirname(__file__), "dataX")
@@ -87,6 +79,58 @@ class TestLoadTasks(object):
         assert 'xxx1' == task_list[0].name
         assert 'yyy2' == task_list[1].name
 
+    def testCreateAfterDecorator(self):
+        @create_after('yyy2')
+        def task_zzz3(): # pragma: no cover
+            pass
+
+        # create_after annotates the function
+        assert isinstance(task_zzz3.doit_create_after, DelayedLoader)
+        assert task_zzz3.doit_create_after.task_dep == 'yyy2'
+
+    def testInitialLoadDelayedTask(self, dodo):
+        @create_after('yyy2')
+        def task_zzz3(): # pragma: no cover
+            raise Exception('Cant be executed on load phase')
+        dodo['task_zzz3'] = task_zzz3
+
+        # placeholder task is created with `loader` attribute
+        task_list = load_tasks(dodo, allow_delayed=True)
+        z_task = [t for t in task_list if t.name=='zzz3'][0]
+        assert z_task.loader.task_dep == 'yyy2'
+        assert z_task.loader.creator == task_zzz3
+
+    def testInitialLoadDelayedTask_no_delayed(self, dodo):
+        @create_after('yyy2')
+        def task_zzz3():
+            yield {'basename': 'foo', 'actions': None}
+            yield {'basename': 'bar', 'actions': None}
+        dodo['task_zzz3'] = task_zzz3
+
+        # load tasks as done by the `list` command
+        task_list = load_tasks(dodo, allow_delayed=False)
+        tasks = {t.name:t for t in task_list}
+        assert 'zzz3' not in tasks
+        assert tasks['foo'].loader is None
+        assert tasks['bar'].loader is None
+
+    def testInitialLoadDelayedTask_creates(self, dodo):
+        @create_after('yyy2', creates=['foo', 'bar'])
+        def task_zzz3(): # pragma: no cover
+            '''my task doc'''
+            raise Exception('Cant be executed on load phase')
+        dodo['task_zzz3'] = task_zzz3
+
+        # placeholder task is created with `loader` attribute
+        task_list = load_tasks(dodo, allow_delayed=True)
+        tasks = {t.name:t for t in task_list}
+        assert 'zzz3' not in tasks
+        f_task = tasks['foo']
+        assert f_task.loader.task_dep == 'yyy2'
+        assert f_task.loader.creator == task_zzz3
+        assert tasks['bar'].loader is tasks['foo'].loader
+        assert tasks['foo'].doc == 'my task doc'
+
     def testNameInBlacklist(self):
         dodo_module = {'task_cmd_name': lambda:None}
         pytest.raises(InvalidDodoFile, load_tasks, dodo_module, ['cmd_name'])
@@ -112,6 +156,23 @@ class TestLoadTasks(object):
         task_list = load_tasks({'Foo':Foo, 'foo':Foo()})
         assert len(task_list) == 1
         assert task_list[0].file_dep == set(['fooy'])
+
+    def testUse_object_methods(self):
+        class Dodo(object):
+            def foo(self): # pragma: no cover
+                pass
+
+            def task_method1(self):
+                return {'actions':None}
+
+            def task_method2(self):
+                return {'actions':None}
+
+        methods = dict(inspect.getmembers(Dodo()))
+        task_list = load_tasks(methods)
+        assert 2 == len(task_list)
+        assert 'method1' == task_list[0].name
+        assert 'method2' == task_list[1].name
 
 
 class TestDodoConfig(object):
@@ -139,11 +200,16 @@ class TestGenerateTaskNone(object):
         assert len(tasks) == 0
 
 
-class TestGenerateTasksDict(object):
+class TestGenerateTasksSingle(object):
     def testDict(self):
         tasks = generate_tasks("my_name", {'actions':['xpto 14']})
         assert isinstance(tasks[0], Task)
         assert "my_name" == tasks[0].name
+
+    def testTaskObj(self):
+        tasks = generate_tasks("foo", Task('bar', None))
+        assert 1 == len(tasks)
+        assert tasks[0].name == 'bar'
 
     def testBaseName(self):
         tasks = generate_tasks("function_name", {
@@ -175,7 +241,7 @@ class TestGenerateTasksGenerator(object):
         def f_xpto():
             for i in range(3):
                 yield {'name':str(i), 'actions' :["xpto -%d"%i]}
-        tasks = sorted(generate_tasks("xpto", f_xpto()))
+        tasks = generate_tasks("xpto", f_xpto())
         assert isinstance(tasks[0], Task)
         assert 4 == len(tasks)
         assert not tasks[0].is_subtask
@@ -192,7 +258,7 @@ class TestGenerateTasksGenerator(object):
         def f_first_level():
             for i in range(2):
                 yield f_xpto(str(i))
-        tasks = sorted(generate_tasks("xpto", f_first_level()))
+        tasks = generate_tasks("xpto", f_first_level())
         assert isinstance(tasks[0], Task)
         assert 7 == len(tasks)
         assert not tasks[0].is_subtask
@@ -200,6 +266,18 @@ class TestGenerateTasksGenerator(object):
         assert tasks[1].is_subtask
         assert "xpto:0-0" == tasks[1].name
         assert "xpto:1-2" == tasks[-1].name
+
+
+    def testGeneratorReturnTaskObj(self):
+        def foo(base_name):
+            for i in range(3):
+                name = "%s-%d" % (base_name, i)
+                yield Task(name, actions=["xpto -%d"%i])
+        tasks = generate_tasks("foo", foo('bar'))
+        assert 3 == len(tasks)
+        assert tasks[0].name == 'bar-0'
+        assert tasks[1].name == 'bar-1'
+        assert tasks[2].name == 'bar-2'
 
 
     def testGeneratorDoesntReturnDict(self):

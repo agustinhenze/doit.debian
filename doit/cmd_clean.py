@@ -56,10 +56,12 @@ class Clean(DoitCmdBase):
         @param cleandep (bool): execute clean from task_dep
         @param cleanall (bool): clean all tasks
         @var default_tasks (list - string): list of default tasks
-        @var selected_tasks (list - string): list of tasks selected from cmd line
+        @var selected_tasks (list - string): list of tasks selected
+                                             from cmd-line
         """
         tasks = dict([(t.name, t) for t in self.task_list])
-        default_tasks = self.config.get('default_tasks')
+        # behaviour of cleandep is different if selected_tasks comes from
+        # command line or DOIT_CONFIG.default_tasks
         selected_tasks = pos_args
         check_tasks_exist(tasks, selected_tasks)
 
@@ -69,10 +71,10 @@ class Clean(DoitCmdBase):
         elif selected_tasks:
             clean_list = selected_tasks
         else:
-            if default_tasks is None:
+            if self.sel_tasks is None:
                 clean_list = [t.name for t in self.task_list]
             else:
-                clean_list = default_tasks
+                clean_list = self.sel_tasks
             # if cleaning default tasks enable clean_dep automatically
             cleandep = True
 
@@ -81,13 +83,12 @@ class Clean(DoitCmdBase):
             # including repeated entries will garantee that deps are listed
             # first when the list is reversed
             to_clean = list(tasks_and_deps_iter(tasks, clean_list, True))
-            to_clean.reverse()
         # include only subtasks in list
         else:
             to_clean = []
-            for name in clean_list:
+            for name in reversed(clean_list):
                 task = tasks[name]
-                to_clean.extend(subtasks_iter(tasks, task))
                 to_clean.append(task)
-
+                to_clean.extend(subtasks_iter(tasks, task))
+        to_clean.reverse()
         self.clean_tasks(to_clean, dryrun)

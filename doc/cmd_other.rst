@@ -2,6 +2,12 @@
 Other Commands
 ================
 
+.. note::
+
+    Not all options/arguments are documented below.
+    Always check `doit help <cmd>` to see a complete list of options.
+
+
 Let's use a more complex example to demonstrate the command line features.
 The example below is used to manage a very simple C project.
 
@@ -19,12 +25,6 @@ help
 
 You can also get help from each available command. e.g. `doit help run`.
 
-.. note::
-
-    Not all options/parameters are documented below.
-    Always check `doit help <cmd>` to see a complete list of options.
-
-
 `doit help task` will display information on all fields/attributes a task dictionary from a `dodo` file accepts.
 
 
@@ -34,32 +34,71 @@ list
 ------
 
 *list* is used to show all tasks available in a *dodo* file.
+Tasks are listed in alphabetical order, not by order of execution.
 
 .. code-block:: console
 
    $ doit list
-   link : create binary program
    compile : compile C files
    install : install executable (TODO)
+   link : create binary program
 
 
-By default task name and description are listed. The task description is taken from the first line of task function doc-string. You can also set it using the *doc* attribute on the task dictionary. It is possible to omit the description using the option *-q*/*--quiet*.
+By default task name and description are listed. The task description is taken
+from the first line of task function doc-string. You can also set it using the
+*doc* attribute on the task dictionary. It is possible to omit the description
+using the option *-q*/*--quiet*.
 
-By default sub-tasks are not listed. It can list sub-tasks using the option *--all*.
+By default sub-tasks are not listed. It can list sub-tasks using the option
+*--all*.
 
-By default task names that start with an underscore(*_*) are not listed. They are listed if the option *-p*/*--private* is used.
+By default task names that start with an underscore(*_*) are not listed. They
+are listed if the option *-p*/*--private* is used.
 
 Task status can be printed using the option *-s*/*--status*.
 
 Task's file-dependencies can be printed using the option *--deps*.
 
 
+info
+-------
+
+You can check a task meta-data using the *info* command.
+This might be useful when have some complex code generating
+the task meta-data.
+
+.. code-block:: console
+
+    $ doit info link
+    name:'link'
+
+    file_dep:set(['command.o', 'kbd.o', 'main.o'])
+
+    targets:['edit']
+
+
+Use the option `--status`, to check the reason a task is not up-to-date.
+
+.. code-block:: console
+
+   $ doit info link
+
+   Task is not up-to-date:
+    * The following file dependencies have changed:
+       - main.o
+       - kbd.o
+       - command.o
+
 
 forget
 -------
 
 
-Suppose you change the compilation parameters in the compile action. Or you changed the code from a python-action. *doit* will think your task is up-to-date based on  the dependencies but actually it is not! In this case you can use the *forget* command to make sure the given task will be executed again even with no changes in the dependencies.
+Suppose you change the compilation parameters in the compile action. Or you
+changed the code from a python-action. *doit* will think your task is up-to-date
+based on the dependencies but actually it is not! In this case you can use the
+*forget* command to make sure the given task will be executed again even with no
+changes in the dependencies.
 
 If you do not specify any task, the default tasks are "*forget*".
 
@@ -76,9 +115,13 @@ If you do not specify any task, the default tasks are "*forget*".
 clean
 ------
 
-A common scenario is a task that needs to "revert" its actions. A task may include a *clean* attribute. This attribute can be ``True`` to remove all of its target files. If there is a folder as a target it will be removed if the folder is empty, otherwise it will display a warning message.
+A common scenario is a task that needs to "revert" its actions. A task may
+include a *clean* attribute. This attribute can be ``True`` to remove all of its
+target files. If there is a folder as a target it will be removed if the folder
+is empty, otherwise it will display a warning message.
 
-The *clean* attribute can be a list of actions, again, an action could be a string with a shell command or a tuple with a python callable.
+The *clean* attribute can be a list of actions, again, an action could be a
+string with a shell command or a tuple with a python callable.
 
 If you want to clean the targets and add some custom clean actions,
 you can include the `doit.task.clean_targets` instead of passing `True`:
@@ -110,7 +153,9 @@ If you want check which tasks the clean operation would affect you can use the o
 ignore
 -------
 
-It is possible to set a task to be ignored/skipped (that is not executed). This is useful for example when you are performing checks in several files and you want to skip the check in some of them temporarily.
+It is possible to set a task to be ignored/skipped (that is, not executed). This
+is useful, for example, when you are performing checks in several files and you
+want to skip the check in some of them temporarily.
 
 .. literalinclude:: tutorial/subtasks.py
 
@@ -128,7 +173,8 @@ It is possible to set a task to be ignored/skipped (that is not executed). This 
     !! create_file:file1.txt
     .  create_file:file2.txt
 
-Note the ``!!``, it means that task was ignored. To reverse the `ignore` use `forget` sub-command.
+Note the ``!!``, it means that task was ignored. To reverse the `ignore` use
+`forget` sub-command.
 
 
 
@@ -141,8 +187,8 @@ auto (watch)
 
    Supported on Linux and Mac only.
 
-`auto` sub-command is an alternative way of executing your tasks.
-It is a long running process that only terminates when it is interrupted (Ctrl-C).
+`auto` sub-command is an alternative way of executing your tasks.  It is a long
+running process that only terminates when it is interrupted (Ctrl-C).
 When started it will execute the given tasks. After that it will watch the
 file system for modifications in the file-dependencies.
 When a file is modified the tasks are re-executed.
@@ -156,6 +202,26 @@ When a file is modified the tasks are re-executed.
 
    The `dodo` file is actually re-loaded/executed in a separate process
    every time tasks need to be re-executed.
+
+
+callbacks
+^^^^^^^^^
+
+It is possible to specify shell commands to executed after every cycle
+of task execution.
+This can used to display desktop notifications, so you do not need to keep
+an eye in the terminal to notice when tasks succeed or failed.
+
+Example of sound and desktop notification on Ubuntu.
+Contents of a `doit.cfg` file:
+
+.. code-block:: INI
+
+  [auto]
+  success_callback = notify-send -u low -i /usr/share/icons/gnome/16x16/emotes/face-smile.png "doit:   success"; aplay -q /usr/share/sounds/purple/send.wav
+  failure_callback = notify-send -u normal -i /usr/share/icons/gnome/16x16/status/error.png "doit:  fail"; aplay -q /usr/share/sounds/purple/alert.wav
+
+
 
 
 ``watch`` parameter
@@ -195,7 +261,7 @@ zsh completion scripts should be placed in a folder in the "autoload" path.
 .. code-block:: sh
 
     # add folder with completion scripts
-    fpath=(~/.zsh/completion $fpath)
+    fpath=(~/.zsh/tabcompletion $fpath)
 
     # Use modern completion system
     autoload -Uz compinit
@@ -225,7 +291,7 @@ from your dodo.py.
 dumpdb
 --------
 
-`doit` saves internal data in a file (`.doit.db` be default).
+`doit` saves internal data in a file (`.doit.db` by default).
 It uses a binary format (whatever python's dbm is using in your system).
 This command will simply dump its content in readable text format in the output.
 
@@ -257,3 +323,38 @@ So this is NOT 100% reliable, use with care!
 .. code-block:: console
 
     $ doit strace <task-name>
+
+
+
+reset-dep
+---------
+
+This command allows to recompute the informations on file dependencies
+(timestamp, md5sum, ... depending on the ``check_file_uptodate`` setting), and
+save this in the database, without executing the actions.
+
+The command run on all tasks by default, but it is possible to specify a list
+of tasks to work on.
+
+This is useful when the targets of your tasks already exist, and you want doit
+to consider your tasks as up-to-date. One use-case for this command is when you
+change the ``check_file_uptodate`` setting, which cause doit to consider all
+your tasks as not up-to-date. It is also useful if you start using doit while
+some of your data as already been computed, or when you add a file dependency
+to a task that has already run.
+
+.. code-block:: console
+
+    $ doit reset-dep
+
+.. warning::
+
+   `reset-dep` will **NOT** recalculate task `values` and `result`.
+   This might not be the correct behavior for your tasks!
+
+   It is safe to use `reset-dep` if your tasks rely only on files to control its
+   up-to-date status. So only use this command if you are sure it is OK for your
+   tasks.
+
+   If the DB already has any saved `values` or `result` they will be preserved
+   otherwise they will not be set at all.

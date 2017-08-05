@@ -1,13 +1,14 @@
-# coding=UTF-8
-
 import os
 import sys
 import tempfile
+import textwrap
 import locale
 locale # quiet pyflakes
+from pathlib import PurePath, Path
+from io import StringIO, BytesIO
+from threading import Thread
+import time
 
-import six
-from six import StringIO
 import pytest
 from mock import Mock
 
@@ -28,12 +29,15 @@ def tmpfile(request):
 
 
 class FakeTask(object):
-    def __init__(self, file_dep, dep_changed, targets, options):
+    def __init__(self, file_dep, dep_changed, targets, options,
+                 pos_arg=None, pos_arg_val=None):
         self.name = "Fake"
         self.file_dep = file_dep
         self.dep_changed = dep_changed
         self.targets = targets
         self.options = options
+        self.pos_arg = pos_arg
+        self.pos_arg_val = pos_arg_val
 
 
 ############# CmdAction
@@ -64,9 +68,9 @@ class TestCmdAction(object):
         assert "Cmd: %s" % PROGRAM == str(my_action)
 
     def test_unicode(self):
-        action_str = six.text_type(PROGRAM) + six.u("中文")
+        action_str = PROGRAM + "中文"
         my_action = action.CmdAction(action_str)
-        assert "Cmd: %s" % action_str == six.text_type(my_action)
+        assert "Cmd: %s" % action_str == str(my_action)
 
     def test_repr(self):
         my_action = action.CmdAction(PROGRAM)
@@ -95,14 +99,14 @@ class TestCmdActionParams(object):
         command = 'python -c "import os; print(os.getcwd())"'
         my_action = action.CmdAction(command, cwd=path.strpath)
         my_action.execute()
-        assert path + "\n" == my_action.out, repr(my_action.out)
+        assert path + os.linesep == my_action.out, repr(my_action.out)
 
     def test_noPathSet(self, tmpdir):
         path = tmpdir.mkdir("foo")
         command = 'python -c "import os; print(os.getcwd())"'
         my_action = action.CmdAction(command)
         my_action.execute()
-        assert path.strpath + "\n" != my_action.out, repr(my_action.out)
+        assert path.strpath + os.linesep != my_action.out, repr(my_action.out)
 
 
 class TestCmdVerbosity(object):
@@ -166,7 +170,27 @@ class TestCmdExpandAction(object):
         my_action = action.CmdAction(cmd, task)
         assert my_action.execute() is None
         got = my_action.out.strip()
-        assert "3 - abc def" == got, repr(got)
+        assert "3 - abc def" == got
+
+    def test_task_pos_arg(self):
+        cmd = "python %s/myecho.py" % TEST_PATH
+        cmd += " %(pos)s"
+        task = FakeTask([],[],[],{}, 'pos', ['hi', 'there'])
+        my_action = action.CmdAction(cmd, task)
+        assert my_action.execute() is None
+        got = my_action.out.strip()
+        assert "hi there" == got
+
+    def test_task_pos_arg_None(self):
+        # pos_arg_val is None when the task is not specified from
+        # command line but executed because it is a task_dep
+        cmd = "python %s/myecho.py" % TEST_PATH
+        cmd += " %(pos)s"
+        task = FakeTask([],[],[],{}, 'pos', None)
+        my_action = action.CmdAction(cmd, task)
+        assert my_action.execute() is None
+        got = my_action.out.strip()
+        assert "" == got
 
     def test_callable_return_command_str(self):
         def get_cmd(opt1, opt2):
@@ -201,32 +225,126 @@ class TestCmdExpandAction(object):
         my_action = action.CmdAction(cmd, task)
         assert cmd == my_action.expand_action()
 
+    def test_list_can_contain_path(self):
+        cmd = ["python", PurePath(TEST_PATH), Path("myecho.py")]
+        task = FakeTask([], [], [], {})
+        my_action = action.CmdAction(cmd, task)
+        assert ["python", TEST_PATH, "myecho.py"] == my_action.expand_action()
 
-class TestCmd_print_process_output(object):
-    def test_non_unicode_string(self):
-        my_action = action.CmdAction("")
-        not_unicode = StringIO('\xc0')
-        pytest.raises(Exception, my_action._print_process_output,
-                       Mock(), not_unicode, Mock(), Mock())
+    def test_list_should_contain_strings_or_paths(self):
+        cmd = ["python", PurePath(TEST_PATH), 42, Path("myecho.py")]
+        task = FakeTask([], [], [], {})
+        my_action = action.CmdAction(cmd, task)
+        assert pytest.raises(action.InvalidTask, my_action.expand_action)
+
+
+class TestCmd_print_process_output_line(object):
+    def test_non_unicode_string_error_strict(self):
+        my_action = action.CmdAction("", decode_error='strict')
+        not_unicode = BytesIO('\xa9'.encode("latin-1"))
+        realtime = Mock()
+        realtime.encoding = 'utf-8'
+        pytest.raises(UnicodeDecodeError,
+                      my_action._print_process_output,
+                      Mock(), not_unicode, Mock(), realtime)
+
+    def test_non_unicode_string_error_replace(self):
+        my_action = action.CmdAction("") # default is decode_error = 'replace'
+        not_unicode = BytesIO('\xa9'.encode("latin-1"))
+        realtime = Mock()
+        realtime.encoding = 'utf-8'
+        capture = StringIO()
+        my_action._print_process_output(
+            Mock(), not_unicode, capture, realtime)
+        # get the replacement char
+        expected = '�'
+        assert expected == capture.getvalue()
+
+    def test_non_unicode_string_ok(self):
+        my_action = action.CmdAction("", encoding='iso-8859-1')
+        not_unicode = BytesIO('\xa9'.encode("latin-1"))
+        realtime = Mock()
+        realtime.encoding = 'utf-8'
+        capture = StringIO()
+        my_action._print_process_output(
+            Mock(), not_unicode, capture, realtime)
+        # get the correct char from latin-1 encoding
+        expected = '©'
+        assert expected == capture.getvalue()
+
 
     # dont test unicode if system locale doesnt support unicode
     # see https://bitbucket.org/schettino72/doit/pull-request/11
-    @pytest.mark.skipif('six.PY3 and locale.getlocale()[1] is None')
+    @pytest.mark.skipif('locale.getlocale()[1] is None')
     def test_unicode_string(self, tmpfile):
         my_action = action.CmdAction("")
         unicode_in = tempfile.TemporaryFile('w+b')
-        unicode_in.write(six.u(" 中文").encode('utf-8'))
+        unicode_in.write(" 中文".encode('utf-8'))
         unicode_in.seek(0)
-        my_action._print_process_output(Mock(), unicode_in, Mock(), tmpfile)
+        my_action._print_process_output(
+            Mock(), unicode_in, Mock(), tmpfile)
 
-    @pytest.mark.skipif('six.PY3 and locale.getlocale()[1] is None')
+    @pytest.mark.skipif('locale.getlocale()[1] is None')
     def test_unicode_string2(self, tmpfile):
         # this \uXXXX has a different behavior!
         my_action = action.CmdAction("")
         unicode_in = tempfile.TemporaryFile('w+b')
-        unicode_in.write(six.u(" 中文 \u2018").encode('utf-8'))
+        unicode_in.write(" 中文 \u2018".encode('utf-8'))
         unicode_in.seek(0)
-        my_action._print_process_output(Mock(), unicode_in, Mock(), tmpfile)
+        my_action._print_process_output(
+            Mock(), unicode_in, Mock(), tmpfile)
+
+    def test_line_buffered_output(self):
+        my_action = action.CmdAction("")
+        out, inp = os.pipe()
+        out, inp = os.fdopen(out, 'rb'), os.fdopen(inp, 'wb')
+        inp.write('abcd\nline2'.encode('utf-8'))
+        inp.flush()
+        capture = StringIO()
+
+        thread = Thread(target=my_action._print_process_output,
+                        args=(Mock(), out, capture, None))
+        thread.start()
+        time.sleep(0.1)
+        try:
+            got = capture.getvalue()
+            # 'line2' is not captured because of line buffering
+            assert 'abcd\n' == got
+            print('asserted')
+        finally:
+            inp.close()
+
+    def test_unbuffered_output(self):
+        my_action = action.CmdAction("", buffering=1)
+        out, inp = os.pipe()
+        out, inp = os.fdopen(out, 'rb'), os.fdopen(inp, 'wb')
+        inp.write('abcd\nline2'.encode('utf-8'))
+        inp.flush()
+        capture = StringIO()
+
+        thread = Thread(target=my_action._print_process_output,
+                        args=(Mock(), out, capture, None))
+        thread.start()
+        time.sleep(0.1)
+        try:
+            got = capture.getvalue()
+            assert 'abcd\nline2' == got
+        finally:
+            inp.close()
+
+
+    def test_unbuffered_env(self, monkeypatch):
+        my_action = action.CmdAction("", buffering=1)
+        proc_mock = Mock()
+        proc_mock.configure_mock(returncode=0)
+        popen_mock = Mock(return_value=proc_mock)
+        from doit.action import subprocess
+        monkeypatch.setattr(subprocess, 'Popen', popen_mock)
+        my_action._print_process_output = Mock()
+        my_action.execute()
+        env = popen_mock.call_args[-1]['env']
+        assert env and env.get('PYTHONUNBUFFERED', False) == '1'
+
 
 
 class TestCmdSaveOuput(object):
@@ -235,7 +353,7 @@ class TestCmdSaveOuput(object):
         PROGRAM = "python %s/sample_process.py" % TEST_PATH
         my_action = action.CmdAction(PROGRAM + " x1 x2", save_out='out')
         my_action.execute()
-        assert {'out': six.u('x1')} == my_action.values
+        assert {'out': 'x1'} == my_action.values
 
 
 
@@ -314,6 +432,21 @@ class TestPythonAction(object):
         my_action = action.PythonAction(error_sample)
         got = my_action.execute()
         assert isinstance(got, TaskError)
+
+    def test_error_taskfail(self):
+        # should get the same exception as was returned from the
+        # user's function
+        def error_sample(): return TaskFailed("too bad")
+        ye_olde_action = action.PythonAction(error_sample)
+        ret = ye_olde_action.execute()
+        assert isinstance(ret, TaskFailed)
+        assert str(ret).endswith("too bad\n")
+
+    def test_error_taskerror(self):
+        def error_sample(): return TaskError("so sad")
+        ye_olde_action = action.PythonAction(error_sample)
+        ret = ye_olde_action.execute()
+        assert str(ret).endswith("so sad\n")
 
     def test_error_exception(self):
         def error_sample(): raise Exception("asdf")
@@ -576,6 +709,15 @@ class TestPythonActionPrepareKwargsMeta(object):
         my_action.execute()
         assert ['1',3] == got, repr(got)
 
+    def test_task_pos_arg(self):
+        got = []
+        def py_callable(pos):
+            got.append(pos)
+        task = FakeTask([],[],[],{}, 'pos', ['hi', 'there'])
+        my_action = action.PythonAction(py_callable, task=task)
+        my_action.execute()
+        assert [['hi', 'there']] == got, repr(got)
+
     def test_option_default_allowed(self, task_depchanged):
         got = []
         def py_callable(opt2='ABC'):
@@ -584,6 +726,53 @@ class TestPythonActionPrepareKwargsMeta(object):
         my_action = action.PythonAction(py_callable, task=task)
         my_action.execute()
         assert ['123'] == got, repr(got)
+
+
+    def test_kwonlyargs_minimal(self, task_depchanged):
+        got = []
+        scope = {'got': got}
+        exec(textwrap.dedent('''
+            def py_callable(*args, kwonly=None):
+                got.append(args)
+                got.append(kwonly)
+        '''), scope)
+        my_action = action.PythonAction(scope['py_callable'],
+                                        (1, 2, 3), {'kwonly': 4},
+                                        task=task_depchanged)
+        my_action.execute()
+        assert [(1, 2, 3), 4] == got, repr(got)
+
+
+    def test_kwonlyargs_full(self, task_depchanged):
+        got = []
+        scope = {'got': got}
+        exec(textwrap.dedent('''
+            def py_callable(pos, *args, kwonly=None, **kwargs):
+                got.append(pos)
+                got.append(args)
+                got.append(kwonly)
+                got.append(kwargs['foo'])
+        '''), scope)
+        my_action = action.PythonAction(scope['py_callable'],
+                                        [1,2,3], {'kwonly': 4, 'foo': 5},
+                                        task=task_depchanged)
+        my_action.execute()
+        assert [1, (2, 3), 4, 5] == got, repr(got)
+
+    def test_action_modifies_task_attributes(self, task_depchanged):
+        def py_callable(targets, dependencies, changed, task):
+            targets.append('new_target')
+            dependencies.append('new_dependency')
+            changed.append('new_changed')
+        my_action = action.PythonAction(py_callable, task=task_depchanged)
+        my_action.execute()
+
+        assert task_depchanged.file_dep == ['dependencies', 'new_dependency']
+
+        assert task_depchanged.targets == ['targets', 'new_target']
+
+        assert task_depchanged.dep_changed == ['changed', 'new_changed']
+
 
 ##############
 

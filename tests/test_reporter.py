@@ -1,12 +1,10 @@
-# coding=UTF-8
-
 import sys
-from six import StringIO
+import json
+from io import StringIO
 
 from doit import reporter
 from doit.task import Task
 from doit.exceptions import CatchedException
-from doit.compat import json
 
 
 class TestConsoleReporter(object):
@@ -56,6 +54,11 @@ class TestConsoleReporter(object):
         rep.skip_uptodate(Task("t_name", None))
         assert "-- " in rep.outstream.getvalue()
         assert "t_name" in rep.outstream.getvalue()
+
+    def test_skipUptodate_hidden(self):
+        rep = reporter.ConsoleReporter(StringIO(), {})
+        rep.skip_uptodate(Task("_name", None))
+        assert "" == rep.outstream.getvalue()
 
     def test_skipIgnore(self):
         rep = reporter.ConsoleReporter(StringIO(), {})

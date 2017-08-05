@@ -1,3 +1,4 @@
+
 ========
 Tasks
 ========
@@ -52,7 +53,7 @@ It can optionally define other attributes like `targets`, `file_dep`,
 Actions define what the task actually does.
 *Actions* is always a list that can have any number of elements.
 The actions of a task are always run sequentially.
-There 2 basic kinds of `actions`: *cmd-action* and *python-action*.
+There are 2 basic kinds of `actions`: *cmd-action* and *python-action*.
 The action "result" is used to determine if task execution was successful or not.
 
 
@@ -67,14 +68,26 @@ Classes and built-in functions are not allowed.
 as positional and keywords arguments for the callable.
 see `Keyword Arguments <http://docs.python.org/tutorial/controlflow.html#keyword-arguments>`_.
 
+The result of the task is given by the returned value of the
+``action`` function.
 
-The result of the task is given by the returned value of the ``action`` function.
-So it must return a *boolean* value `True`, `None`,
-a dictionary or a string to indicate successful completion of the task.
-Use `False` to indicate task failed.
-If it raises an exception, it will be considered an error.
-If it returns any other type it will also be considered an error
-but this behavior might change in future versions.
+For **successful** completion it must return one of:
+
+* `True`
+* `None`
+* a dictionary
+* a string
+
+For **unsuccessful** completion it must return one of:
+
+* `False` indicates the task generally failed
+* if it raises any exception, it will be considered an error
+* it can also explicitly return an instance of :py:class:`TaskFailed`
+  or :py:class:`TaskError`
+
+If the action returns a type other than the types already discussed, the action
+will be considered a failure, although this behavior might change in future
+versions.
 
 .. literalinclude:: tutorial/tutorial_02.py
 
@@ -82,7 +95,7 @@ The function `task_hello` is a *task-creator*, not the task itself.
 The body of the task-creator function is always executed when the dodo
 file is loaded.
 
-.. note::
+.. topic:: task-creators vs actions
 
   The body of task-creators are executed even if the task is not going
   to be executed.
@@ -90,6 +103,11 @@ file is loaded.
   not execute tasks!
   From now on when the  documentation says that a *task* is executed,
   read "the task's actions are executed".
+
+
+`action` parameters can be passed as ``kwargs``.
+
+.. literalinclude:: tutorial/task_kwargs.py
 
 
 cmd-action
@@ -116,7 +134,9 @@ python code from the `dodo` file. Let's take a look at another example:
   so in this example the line `msg = 3 * "hi! "` will always be executed.
 
 
-If `action` is a list of strings, by default it will be executed **without the shell** (Popen argument shell=False).
+If `action` is a list of strings and instances of any Path class from
+`pathlib <https://docs.python.org/3/library/pathlib.html>`_, by default it will
+be executed **without the shell** (Popen argument shell=False).
 
 .. literalinclude:: tutorial/cmd_actions_list.py
 
@@ -153,6 +173,39 @@ custom actions
 It is possible to create other type of actions,
 check :ref:`tools.LongRunning<tools.LongRunning>` as an example.
 
+
+
+keywords on actions
+--------------------
+
+It is common situation to use task information such as *targets*,
+*dependencies*, or *changed* in its own actions.
+Note: Dependencies here refers only to *file-dependencies*.
+
+For *cmd-action* you can use the python notation for keyword substitution
+on strings. The string will contain all values separated by a space (" ").
+
+For *python-action* create a parameter in the function, `doit` will take care
+of passing the value when the function is called.
+The values are passed as list of strings.
+
+.. literalinclude:: tutorial/hello.py
+
+
+You can also pass the keyword *task* to have a reference to all task
+metadata.
+
+.. literalinclude:: tutorial/meta.py
+
+
+.. note::
+
+  Note that the *task* argument is a `Task` object instance, not
+  the metadata *dict*.
+
+
+It is possible not only to retrieve task's attributes but also to modify
+them while the action is running!
 
 
 task name
@@ -217,7 +270,7 @@ avoiding empty sub-tasks
 If you are not sure sub-tasks will be created for a given ``basename``
 but you want to make sure that a task exist,
 you can yield a sub-task with ``name`` equal to ``None``.
-This can also used to set the task ``doc`` and ``watch`` attribute.
+This can also be used to set the task ``doc`` and ``watch`` attributes.
 
 .. literalinclude:: tutorial/empty_subtasks.py
 
@@ -267,6 +320,7 @@ The execution of the task's actions is skipped.
 Note the ``--`` (2 dashes, one space) on the command output on the second
 time it is executed. It means, this task was up-to-date and not executed.
 
+.. _file-dep:
 
 file_dep (file dependency)
 -----------------------------
@@ -280,6 +334,9 @@ You don't need to compile anything but you probably want to apply a lint-like
 tool (i.e. `pyflakes <http://pypi.python.org/pypi/pyflakes>`_) to your
 source code files. You can define the source code as a dependency to the task.
 
+Every dependency in file_dep list should be a string or an instance of any
+Path class from `pathlib <https://docs.python.org/3/library/pathlib.html>`_.
+
 
 .. literalinclude:: tutorial/checker.py
 
@@ -290,10 +347,23 @@ source code files. You can define the source code as a dependency to the task.
    $ doit
    -- checker
 
+
+`doit` checks if `file_dep` was modified or not
+(by comparing the file content's MD5). If there are no changes the action
+is not executed again as it would produce the same result.
+
 Note the ``--`` again to indicate the execution was skipped.
 
 Traditional build-tools can only handle files as "dependencies".
 `doit` has several ways to check for dependencies, those will be introduced later.
+
+
+.. note::
+
+   `doit` saves the MD5 of a `file_dep` after the actions are executed.
+   Be careful about editing a `file_dep` while a task is running because
+   `doit` might saves the MD5 of a version of the file that is different
+   than it actually used to execute the task.
 
 
 targets
@@ -301,7 +371,9 @@ targets
 
 Targets can be any file path (a file or folder). If a target doesn't exist
 the task will be executed. There is no limitation on the number of targets
-a task may define. Two different tasks can not have the same target.
+a task may define. Two different tasks can not have the same target. Target
+can be specified as a string or as an instance of any Path class from
+`pathlib <https://docs.python.org/3/library/pathlib.html>`_.
 
 Lets take the compilation example again.
 
@@ -341,6 +413,12 @@ executed in the correct order.
   .  create
   .  modify
 
+
+.. note::
+
+  `doit` compares the path (string) of the file of `file_dep` and `targets`.
+  So although `my_file` and `./my_file` are actually the same file, `doit`
+  will think they are different files.
 
 
 .. _task-selection:
@@ -417,144 +495,6 @@ You can also select tasks to be executed using a `glob <http://docs.python.org/l
     .  create_file:file3.txt
 
 
-.. _parameters:
-
-parameters
------------
-
-It is possible to pass option parameters to the task through the command line.
-
-Just add a ``params`` field to the task dictionary. ``params`` must be a list of
-dictionaries where every entry is an option parameter. Each parameter must
-define a name, and a default value. It can optionally define a "short" and
-"long" names to be used from the command line (it follows unix command line
-conventions). It may also specify additional attributes, such as
-`type` and `help` (see :ref:`below <parameters-attributes>`).
-
-
-See the example:
-
-.. literalinclude:: tutorial/parameters.py
-
-
-For python-actions the python function must define arguments with the same name as a task parameter.
-
-.. code-block:: console
-
-    $ doit py_params -p abc --param2 4
-    .  py_params
-    abc
-    9
-
-For cmd-actions use python string substitution notation:
-
-.. code-block:: console
-
-    $ doit cmd_params -f "-c --other value"
-    .  cmd_params
-    mycmd -c --other value xxx
-
-
-
-.. _parameters-attributes:
-
-All parameters attributes
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Here is the list of all attributes ``param`` accepts:
-
-``name``
-    Name of the parameter, identifier used as name of the the parameter
-    on python code.
-    It should be unique among others.
-
-    :required:  True
-    :type:      `str`
-
-``default``
-    Default value used when it is set through command-line.
-
-    :required:  True
-
-``short``
-    Short parameter form, used for e.g. ``-p value``.
-
-    :required:  optional
-    :type:      `str`
-
-``long``
-    Long parameter form, used for e.g. ``--parameter value``
-    when it differs from its `name`.
-
-    :required:  optional
-    :type:      `str`
-
-``type``
-    Actually it can be any python callable.
-    It coverts the string value received from command line to whatever
-    value to be used on python code.
-
-    If the ``type`` is ``bool`` the parameter is treated as an *option flag*
-    where no value should be specified, value is set to ``True``.
-    Example: ``doit mytask --flag``.
-
-    :required:  optional
-    :type:      `callable` (e.g. a `function`)
-    :default:   `str`
-
-``help``
-    Help message associated to this parameter, shown when
-    :ref:`help <cmd-help>` is called for this task,
-    e.g. ``doit help mytask``.
-
-    :required:  optional
-    :type:      `str`
-
-``inverse``
-    [only for `bool` parameter]
-    Set inverse flag long parameter name, value will be set to ``False``
-    (see example below).
-
-    :required:  optional
-    :type:      `str`
-
-    Example, given following code:
-
-    .. literalinclude:: tutorial/parameters_inverse.py
-
-    calls to task `with_flag` show flag on or off:
-
-    .. code-block:: console
-
-        $ doit with_flag
-        .  with_flag
-        Flag On
-        $ doit with_flag --flagoff
-        .  with_flag
-        Flag Off
-
-
-
-.. _command line variables:
-
-command line variables (*doit.get_var*)
------------------------------------------
-
-It is possible to pass variable values to be used in dodo.py from the command line.
-
-.. literalinclude:: tutorial/get_var.py
-
-.. code-block:: console
-
-    $ doit
-    .  echo
-    hi {abc: NO}
-    $ doit abc=xyz x=3
-    .  echo
-    hi {abc: xyz}
-
-
-
 private/hidden tasks
 ---------------------
 
@@ -612,53 +552,15 @@ You can control the verbosity by:
 
 * from command line, see :ref:`verbosity option<verbosity_option>`.
 
-.. _create-doit-tasks:
 
+pathlib
+--------
 
-custom task definition
-------------------------
+`doit` supports `pathlib <https://docs.python.org/3/library/pathlib.html>`_:
+file_dep, targets and CmdAction specified as a list can take as elements not
+only strings but also instances of any Path class from pathlib.
 
-Apart from collect functions that start with the name `task_`.
-The *doit* loader will also execute the ``create_doit_tasks``
-callable from any object that contains this attribute.
+Lets take the compilation example and modify it to work with any number
+of header and source files in current directory using pathlib.
 
-
-.. literalinclude:: tutorial/custom_task_def.py
-
-The `project letsdoit <https://bitbucket.org/takluyver/letsdoit>`_
-has some real-world implementations.
-
-For simple examples to help you create your own check this
-`blog post <http://blog.schettino72.net/posts/doit-task-creation.html>`_.
-
-
-importing tasks
----------------
-
-The *doit* loader will look at **all** objects in the namespace of the *dodo*.
-It will look for functions staring with ``task_`` and objects with
-``create_doit_tasks``.
-So it is also possible to load task definitions from other
-modules just by importing them into your *dodo* file.
-
-.. literalinclude:: tutorial/import_tasks.py
-
-.. code-block:: console
-
-    $ doit list
-    echo
-    hello
-    sample
-
-
-.. note::
-
-   Importing tasks from different modules is useful if you want to split
-   your task definitions in different modules.
-
-   The best way to create re-usable tasks that can be used in several projects
-   is to call functions that return task dict's.
-   For example take a look at a reusable *pyflakes*
-   `task generator <https://github.com/pydoit/doit-py/blob/master/doitpy/pyflakes.py>`_.
-   Check the project `doit-py <https://github.com/pydoit/doit-py>`_
-   for more examples.
+.. literalinclude:: tutorial/compile_pathlib.py
