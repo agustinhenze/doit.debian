@@ -22,8 +22,8 @@ Build-Depends:
 Standards-Version: 4.0.0
 X-Python3-Version: >= 3.4
 Homepage: http://pydoit.org
-Vcs-Git: git://anonscm.debian.org/collab-maint/doit.git
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/doit.git
+Vcs-Git: https://anonscm.debian.org/collab-maint/doit.git
+Vcs-Browser: https://anonscm.debian.org/gitweb/?p=collab-maint/doit.git
 
 Package: python3-doit
 Architecture: all
