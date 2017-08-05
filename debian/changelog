@@ -1,3 +1,17 @@
+doit (0.30.3-1) unstable; urgency=medium
+
+  * New upstream version 0.30.3
+  * Update watch url, the project has been moved from bitbucket to github
+  * python-doit package has been removed, upstream doesn't support python2
+    anymore
+  * Use help2man to deliver an updated manpage
+  * Bumped Standard-Version to 4.0.0 (no changes required)
+  * Use https for Vcs-* fields
+  * Use uscan for get-orig-source target
+  * Use the proper patch for zsh completion (Closes: #843581, #797180)
+
+ -- Agustin Henze <tin@debian.org>  Sat, 05 Aug 2017 18:32:10 -0400
+
 doit (0.25.0-2) unstable; urgency=medium
 
   * Remove depends on python3.3 (Closes: #751643)
