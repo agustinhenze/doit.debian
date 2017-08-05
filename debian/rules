@@ -44,9 +44,4 @@ override_dh_auto_test:
 #endif
 
 get-orig-source:
-	@if [ ! -d "debian" ] ; then \
-		echo 'Run this from the top directory of the Debian source' >&2; \
-		exit 1; \
-	fi
-	uscan --noconf --verbose --rename --destdir=$(CURDIR) \
-		--check-dirname-level=0 --force-download --download-version $(UPSTREAM_VERSION)
+	uscan --download-version $(DEB_VERSION_UPSTREAM)
