@@ -16,10 +16,10 @@ Build-Depends:
  python3-mock,
  python3-gdbm,
  python3-pyinotify,
-Standards-Version: 3.9.5
  python3-pyflakes,
  python3-pytest,
  python3-cloudpickle,
+Standards-Version: 4.0.0
 X-Python3-Version: >= 3.4
 Homepage: http://pydoit.org
 Vcs-Git: git://anonscm.debian.org/collab-maint/doit.git
