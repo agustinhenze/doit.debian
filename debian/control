@@ -8,14 +8,7 @@ Build-Depends:
  bash-completion,
  dh-python,
  strace,
- python-all,
- python-sphinx (>= 1.0.7+dfsg) | python3-sphinx,
- python-pyinotify,
- python-setuptools,
- python-mock,
- python-six,
- python-gdbm,
- python-pytest,
+ python3-sphinx,
  python3-all,
  python3-setuptools,
  python3-six,
@@ -23,30 +16,13 @@ Build-Depends:
  python3-gdbm,
  python3-pyinotify,
 Standards-Version: 3.9.5
-X-Python-Version: >= 2.7
+ python3-pyflakes,
+ python3-pytest,
+ python3-cloudpickle,
 X-Python3-Version: >= 3.4
 Homepage: http://pydoit.org
 Vcs-Git: git://anonscm.debian.org/collab-maint/doit.git
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/doit.git
-
-Package: python-doit
-Architecture: all
-Depends: ${python:Depends}, ${misc:Depends}, python-pyinotify, python-six
-Recommends: strace, python-gdbm
-Suggests: python-doit-doc
-Description: Automation tool to execute any kind of task in a build-tools fashion
- doit is an automation tool that brings the power of build-tools to execute any
- kind of task.
- .
- A task describes some computation to be done (actions), and contains some
- extra meta-data.
- The actions can be external programs or Python functions. A single task may
- define more than one action.
- doit uses the task’s meta-data to:
-  * cache task results
-  * correct execution order
-  * parallel execution
-  * powerful dependency system
 
 Package: python3-doit
 Architecture: all
@@ -73,7 +49,7 @@ Package: python-doit-doc
 Architecture: all
 Section: doc
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
-Recommends: python-doit
+Recommends: python3-doit
 Description: Automation tool for executing any kind of task in a build-tools fashion - doc
  doit is an automation tool that brings the power of build-tools to execute any
  kind of task.

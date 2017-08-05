@@ -4,31 +4,20 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-PYVERS :=  python2.7
-PY3VERS := $(shell py3versions -s)
-UPSTREAM_VERSION := $(shell dpkg-parsechangelog -SVersion | cut -d- -f1)
-PACKAGE_NAME := $(shell dpkg-parsechangelog -SSource)
-export PYBUILD_NAME=$(PACKAGE_NAME)
+include /usr/share/dpkg/pkg-info.mk
+export PYBUILD_NAME=$(DEB_SOURCE)
 
 %:
-	dh $@ --with bash-completion,sphinxdoc,python2,python3 --buildsystem=pybuild
+	dh $@ --with bash-completion,sphinxdoc,python3 --buildsystem=pybuild
 
 override_dh_bash-completion:
-	cp bash_completion_doit debian/bash_completion_doit3
-	sed -i 's@doit@doit3@g' debian/bash_completion_doit3
 	dh_bash-completion
-	cp zsh_completion_doit debian/zsh_completion_doit3
-	sed -i 's@doit@doit3@g' debian/zsh_completion_doit3
-	cp zsh_completion_doit debian/python-doit/usr/share/zsh/functions/Completion/Linux/_doit
-	cp debian/zsh_completion_doit3 debian/python3-doit/usr/share/zsh/functions/Completion/Linux/_doit3
+	cp zsh_completion_doit debian/zsh_completion_doit
 
 override_dh_auto_clean:
 	dh_auto_clean
 	rm -rf doc/_build
 	rm -f debian/doit.1
-	rm -f debian/doit3.1
-	rm -f debian/bash_completion_doit3
-	rm -f debian/zsh_completion_doit3
 	rm -f tests/data/stop
 	rm -f tests/data/dependency*
 	rm -f tests/data/target
@@ -36,11 +25,8 @@ override_dh_auto_clean:
 
 override_dh_auto_install:
 	dh_auto_install
-	# Renaming the binary for python3
-	mv debian/python3-doit/usr/bin/doit debian/python3-doit/usr/bin/doit3
 	# Generate manpages
 	rst2man debian/doit.rst debian/doit.1
-	rst2man debian/doit3.rst debian/doit3.1
 	# build the html pages for the -doc package
 	set -ex; \
 		cd doc; \
