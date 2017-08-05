@@ -8,6 +8,7 @@ Build-Depends:
  bash-completion,
  dh-python,
  strace,
+ help2man,
  python3-sphinx,
  python3-all,
  python3-setuptools,

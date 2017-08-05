@@ -26,7 +26,7 @@ override_dh_auto_clean:
 override_dh_auto_install:
 	dh_auto_install
 	# Generate manpages
-	rst2man debian/doit.rst debian/doit.1
+	help2man debian/doit.sh > debian/doit.1
 	# build the html pages for the -doc package
 	set -ex; \
 		cd doc; \
