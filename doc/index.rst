@@ -1,8 +1,26 @@
-Introduction
-==============
+:orphan:
 
-`doit` comes from the idea of bringing the power of build-tools
-to execute any kind of **task**
+.. rubric::
+    `doit` is a task management & automation tool
+
+.. rubric::
+    `doit` comes from the idea of bringing the power of build-tools
+    to execute any kind of **task**
+
+`doit` is a modern open-source build-tool written in python
+designed to be simple to use and flexible to deal with complex work-flows.
+It is specially suitable for building and managing custom work-flows where
+there is no out-of-the-box solution available.
+
+`doit` has been successfully used on: systems test/integration automation,
+scientific computational pipelines, content generation,
+configuration management, etc.
+Check some `success stories <stories.html>`_ ...
+
+
+
+introduction
+============
 
 A **task** describes some computation to be done (*actions*),
 and contains some extra meta-data.
@@ -17,29 +35,36 @@ and contains some extra meta-data.
       }
 
 
-.. topic:: actions
+**actions**:
 
-  - can be external programs (executed as shell commands) or
-    python functions.
-  - a single task may define more than one action.
+- can be external programs (executed as shell commands) or
+  python functions.
+- a single task may define more than one action.
 
+
+**task meta-data**:
+
+- task meta-data includes a description of input file for the *actions*
+  (**dependencies**), and result files **targets**
+- there are many other meta-data fields to control how and when a task is
+  executed...
 
 *doit* uses the task's meta-data to:
 
-.. topic:: cache task results
+.. topic:: cache task results (aka *incremental-builds*)
 
    `doit` checks if the task is **up-to-date** and skips its execution if the
-   task would produce the same result (cached) of a previous execution.
+   task would produce the same result of a previous execution.
 
 .. topic:: correct execution order
 
-  By checking the inter-dependency between tasks `doit` ensures that tasks
-  will be execute in the correct order.
+   By checking the inter-dependency between tasks `doit` ensures that tasks
+   will be execute in the correct order.
 
 .. topic:: parallel execution
 
-  built-in support for parallel (threaded or multi-process) task execution
-  (:ref:`more <parallel-execution>`)
+   built-in support for parallel (threaded or multi-process) task execution
+   (:ref:`more <parallel-execution>`)
 
 
 Traditional build-tools were created mainly to deal with compile/link
@@ -64,17 +89,17 @@ but often you want to create this metadata programmatically.
 
    `doit` uses plain python modules to create tasks (and its meta-data)
 
+
 .. topic:: customizable task definition
 
-   By default tasks are described by a `dict`.
-   But it can be easily customized. (:ref:`more <create-doit-tasks>`) like:
+   By default tasks are described by a python `dict`.
+   But it can be easily customized. (:ref:`more <create-doit-tasks>`)
 
-.. code-block:: python
 
-     # with a decorator
-     @task(file_dep=['input.txt'])
-     def my_task_action(dependencies):
-          # do something
+.. topic:: debugger
+
+   Since plain python is used to define your tasks the python debugger (`pdb`)
+   is available as in any other python application
 
 
 Other features...
@@ -97,9 +122,14 @@ Other features...
 
 .. topic:: tab-completion
 
-  tab-completion for commands/task (supports bash and zsh)
+  built-in support tab-completion for commands/task (supports bash and zsh)
   (:ref:`more <tabcompletion>`)
 
+.. topic:: IPython integration
+
+  provide `%doit` magic function that loads tasks defined directly in IPython's
+  global namespace
+  (:ref:`more <tools.IPython>`)
 
 .. topic:: extensible
 
@@ -119,26 +149,33 @@ What people are saying about `doit`
 
   I love all the traditional unix power tools, like cron, make, perl, ..., I also like new comprehensive configuration management tools like CFEngine and Puppet.  But I find doit to be so versatile and so productive. - `Charlie Guo <https://groups.google.com/d/msg/python-doit/JXElpPfcmmM/znvBT0OFhMYJ>`_
 
+  I went back and forth on different Pythonic build tools for awhile. Scons is pretty great if you're doing 'standard' sorts of builds, but I found it a little heavy for my tastes and really hard to customize to my tool flow (in FPGA land, there are all kinds of nonstandard vendor tools that all need to play together). I've been using doit more and more over the past few months, and I'm continually impressed by the tool (aside from the goofy name). It works amazingly well for automating tricky/exotic build processes. Check it out! `SkOink <http://news.slashdot.org/comments.pl?sid=4319575&cid=45085519>`_
+
   I needed a sort of 'make' tool to glue things together and after trying out all kinds, doit ... has actually turned out to be beautiful. Its easy to add and manage tasks, even complex ones-- gluing things together with decorators and 'library' functions I've written to do certain similar things. - `Matthew <https://groups.google.com/d/msg/python-doit/eKI0uu02ZeY/cBU0RRsO0_cJ>`_
 
   Some time ago, I grew frustrated with Make and Ant and started porting my build files to every build tool I found (SCons, Waf, etc.). Each time, as soon as I stepped out of already available rules, I ran into some difficult to overcome stumbling blocks. Then I discovered this little gem of simplicity: doit. It's Python-based. It doesn't try to be smart, it does not try to be cool, it just works. If you are looking for a flexible little build tool for different languages and tasks, give it a chance. (...) - `lelele <http://www.hnsearch.com/search#request/all&q=python-doit.sourceforge.net&start=0>`_
 
 
+`Success Stories... <stories.html>`_
 
 Project Details
 ===============
 
-* This is an open-source project (`MIT license <http://opensource.org/licenses/mit-license.php>`_) written in python. Runs on Python 2.6 through 3.4 with a single codebase.
+* This is an open-source project
+  (`MIT license <http://opensource.org/licenses/mit-license.php>`_)
+  written in python. Runs on Python 3.3 through 3.6 (including PyPy support). For python 2 support please use *doit* version 0.29.
 
 * Download from `PyPi <http://pypi.python.org/pypi/doit>`_
 
-* Project management (bug tracker, feature requests and source code ) on `bitbucket <https://bitbucket.org/schettino72/doit>`_.
+* Please check the community `guidelines <https://github.com/pydoit/doit/blob/master/CONTRIBUTING.md>`_ before asking questions and reporting issues.
 
-* Questions and feedback on `google group <http://groups.google.co.in/group/python-doit>`_.
+* Project management (bug tracker, feature requests and source code ) on `github <https://github.com/pydoit/doit>`_.
+
+* `doit projects <https://github.com/pydoit/doit/wiki/powered-by-doit>`_ contains a collection of third-party projects, plugins, extensions, non-trivial examples and re-usable task creators for `doit`.
+
+* Questions and feedback on `Google group <http://groups.google.co.in/group/python-doit>`_. Please do **not** send questions to my private email.
 
 * This web site is hosted on http://pages.github.com
-
-* `doit-recipes <https://bitbucket.org/schettino72/doit-recipes/wiki/Home>`_ contains a collection of non-trivial examples and a list of projects using `doit`.
 
 * Professional support and consulting services available from `doit`
   creator & maintainer (*schettino72* at gmail.com).
@@ -150,17 +187,12 @@ Status
 
 This blog `post <http://schettino72.wordpress.com/2008/04/14/doit-a-build-tool-tale/>`_ explains how everything started in 2008.
 
-`doit` is under active development. Version 0.25 released on 2014-03.
+`doit` is under active development. Version 0.30 released on 2016-11.
 
-`doit` core features are quite stable. So if there is no recent development,
+`doit` core features are quite stable. If there is no recent development,
 it does NOT mean `doit` is not being maintained...
-The project has 100% unit-test code coverage
-and kept with *zero* bugs in the tracker.
+The project has 100% unit-test code coverage.
 
 Development is done based on real world use cases.
-If I don't need a feature and nobody never asked/implemented it,
-it is not implemented ;)
-It is well designed and has a very small code base
-so adding new features isn't hard.
-
-If you use `doit` please drop me a line telling me your experience...
+It is well designed and has a small code base,
+so adding new features is not hard. Patches are welcome.

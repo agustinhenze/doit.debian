@@ -5,11 +5,14 @@ import types
 import os
 import sys
 import inspect
-import six
+from collections import OrderedDict
+from functools import partial
+from pathlib import PurePath
 
 from .cmdparse import CmdOption, TaskParse
 from .exceptions import CatchedException, InvalidTask
 from .action import create_action, PythonAction
+from .dependency import UptodateCalculator
 
 
 def first_line(doc):
@@ -22,12 +25,40 @@ def first_line(doc):
     return ''
 
 
+class DelayedLoader(object):
+    """contains info for delayed creation of tasks from a task-creator
+
+    :ivar creator: reference to task-creator function
+    :ivar task_dep: (str) name of task that should be executed before the
+                    the loader call the creator function
+    :ivar basename: (str) basename used when creating tasks
+                   This is used when doit creates new tasks to handle
+                   tasks and targets specified on command line
+    :ivar target_regex: (str) regex for all targets that this loader tasks
+                        will create
+    :ivar created: (bool) wheather this creator was already executed or not
+    """
+    def __init__(self, creator, executed=None, target_regex=None, creates=None):
+        self.creator = creator
+        self.task_dep = executed
+        self.basename = None
+        self.created = False
+        self.target_regex = target_regex
+        self.creates = creates[:] if creates else []
+        self.regex_groups = OrderedDict()  # task_name:RegexGroup
+
+
+# used to indicate that a task had DelayedLoader but was already created
+DelayedLoaded = False
+
+
 class Task(object):
     """Task
 
     @ivar name string
     @ivar actions: list - L{BaseAction}
     @ivar clean_actions: list - L{BaseAction}
+    @ivar loader (DelayedLoader)
     @ivar teardown (list - L{BaseAction})
     @ivar targets: (list -string)
     @ivar task_dep: (list - string)
@@ -51,12 +82,15 @@ class Task(object):
 
     @ivar options: (dict) calculated params values (from getargs and taskopt)
     @ivar taskopt: (cmdparse.CmdParse)
+    @ivar pos_arg: (str) name of parameter in action to receive positional
+                     parameters from command line
+    @ivar pos_arg_val: (list - str) list of positional parameters values
     @ivar custom_title: function reference that takes a task object as
                         parameter and returns a string.
     """
 
     DEFAULT_VERBOSITY = 1
-    string_types = (str, ) if six.PY3 else (str, unicode)
+    string_types = (str, )
     # list of valid types/values for each task attribute.
     valid_attr = {'basename': (string_types, ()),
                   'name': (string_types, ()),
@@ -71,19 +105,21 @@ class Task(object):
                   'teardown': ((list, tuple), ()),
                   'doc': (string_types, (None,)),
                   'params': ((list, tuple,), ()),
-                  'verbosity': ((), (None,0,1,2,)),
+                  'pos_arg': (string_types, (None,)),
+                  'verbosity': ((), (None, 0, 1, 2,)),
                   'getargs': ((dict,), ()),
                   'title': ((types.FunctionType,), (None,)),
                   'watch': ((list, tuple), ()),
-                  }
+    }
 
 
     def __init__(self, name, actions, file_dep=(), targets=(),
                  task_dep=(), uptodate=(),
                  calc_dep=(), setup=(), clean=(), teardown=(),
                  is_subtask=False, has_subtask=False,
-                 doc=None, params=(), verbosity=None, title=None, getargs=None,
-                 watch=()):
+                 doc=None, params=(), pos_arg=None,
+                 verbosity=None, title=None, getargs=None,
+                 watch=(), loader=None):
         """sanity checks and initialization
 
         @param params: (list of dict for parameters) see cmdparse.CmdOption
@@ -102,15 +138,22 @@ class Task(object):
         self.check_attr(name, 'teardown', teardown, self.valid_attr['teardown'])
         self.check_attr(name, 'doc', doc, self.valid_attr['doc'])
         self.check_attr(name, 'params', params, self.valid_attr['params'])
+        self.check_attr(name, 'pos_arg', pos_arg,
+                        self.valid_attr['pos_arg'])
         self.check_attr(name, 'verbosity', verbosity,
                         self.valid_attr['verbosity'])
         self.check_attr(name, 'getargs', getargs, self.valid_attr['getargs'])
         self.check_attr(name, 'title', title, self.valid_attr['title'])
         self.check_attr(name, 'watch', watch, self.valid_attr['watch'])
 
+        if '=' in name:
+            msg = "Task '{}': name must not use the char '=' (equal sign)."
+            raise InvalidTask(msg.format(name))
         self.name = name
-        self.taskcmd = TaskParse([CmdOption(opt) for opt in params])
-        self.options = self._init_options()
+        self.params = params # save just for use on command `info`
+        self.options = None
+        self.pos_arg = pos_arg
+        self.pos_arg_val = None # to be set when parsing command line
         self.setup_tasks = list(setup)
 
         # actions
@@ -122,13 +165,21 @@ class Task(object):
 
         self._init_deps(file_dep, task_dep, calc_dep)
 
-        self.value_savers = []
-        self.uptodate = self._init_uptodate(uptodate) if uptodate else []
+        # loaders create an implicity task_dep
+        self.loader = loader
+        if self.loader and self.loader.task_dep:
+            self.task_dep.append(loader.task_dep)
+
+        uptodate = uptodate if uptodate else []
 
         self.getargs = getargs
         if self.getargs:
-            self._init_getargs()
-        self.targets = targets
+            uptodate.extend(self._init_getargs())
+
+        self.value_savers = []
+        self.uptodate = self._init_uptodate(uptodate)
+
+        self.targets = self._init_targets(targets)
         self.is_subtask = is_subtask
         self.has_subtask = has_subtask
         self.result = None
@@ -169,6 +220,21 @@ class Task(object):
             self._expand_calc_dep(calc_dep)
 
 
+    def _init_targets(self, items):
+        """convert valid targets to `str`"""
+        targets = []
+        for target in items:
+            if isinstance(target, str):
+                targets.append(target)
+            elif isinstance(target, PurePath):
+                targets.append(str(target))
+            else:
+                msg = ("%s. target must be a str or Path from pathlib. " +
+                       "Got '%r' (%s)")
+                raise InvalidTask(msg % (self.name, target, type(target)))
+        return targets
+
+
     def _init_uptodate(self, items):
         """wrap uptodate callables"""
         uptodate = []
@@ -184,10 +250,10 @@ class Task(object):
                 uptodate.append((item, [], {}))
             elif isinstance(item, tuple):
                 call = item[0]
-                args = list(item[1]) if len(item)>1 else []
-                kwargs = item[2] if len(item)>2 else {}
+                args = list(item[1]) if len(item) > 1 else []
+                kwargs = item[2] if len(item) > 2 else {}
                 uptodate.append((call, args, kwargs))
-            elif isinstance(item, six.string_types):
+            elif isinstance(item, str):
                 uptodate.append((item, [], {}))
             else:
                 msg = ("%s. task invalid 'uptodate' item '%r'. " +
@@ -200,10 +266,14 @@ class Task(object):
     def _expand_file_dep(self, file_dep):
         """put input into file_dep"""
         for dep in file_dep:
-            if not isinstance(dep, six.string_types):
-                raise InvalidTask("%s. file_dep must be a str got '%r' (%s)" %
-                                  (self.name, dep, type(dep)))
-            self.file_dep.add(dep)
+            if isinstance(dep, str):
+                self.file_dep.add(dep)
+            elif isinstance(dep, PurePath):
+                self.file_dep.add(str(dep))
+            else:
+                msg = ("%s. file_dep must be a str or Path from pathlib. " +
+                       "Got '%r' (%s)")
+                raise InvalidTask(msg % (self.name, dep, type(dep)))
 
 
     def _expand_task_dep(self, task_dep):
@@ -228,34 +298,41 @@ class Task(object):
 
 
     # FIXME should support setup also
-    _expand_map = {'task_dep': _expand_task_dep,
-                   'file_dep': _expand_file_dep,
-                   'calc_dep': _expand_calc_dep,
-                   'uptodate': _extend_uptodate,
-                   }
+    _expand_map = {
+        'task_dep': _expand_task_dep,
+        'file_dep': _expand_file_dep,
+        'calc_dep': _expand_calc_dep,
+        'uptodate': _extend_uptodate,
+    }
     def update_deps(self, deps):
         """expand all kinds of dep input"""
-        for dep, dep_values in six.iteritems(deps):
+        for dep, dep_values in deps.items():
             if dep not in self._expand_map:
                 continue
             self._expand_map[dep](self, dep_values)
 
 
-    def _init_options(self):
-        """put default values on options. this will be overwritten, if params
-        options were passed on the command line.
+    def init_options(self):
+        """Put default values on options.
+
+        This will only be used, if params options were not passed
+        on the command line.
         """
-        # ignore positional parameters
-        return self.taskcmd.parse('')[0]
+        if self.options is None:
+            taskcmd = TaskParse([CmdOption(opt) for opt in self.params])
+            # ignore positional parameters
+            self.options = taskcmd.parse('')[0]
 
 
     def _init_getargs(self):
         """task getargs attribute define implicit task dependencies"""
-        for arg_name, desc in six.iteritems(self.getargs):
+        check_result = set()
+
+        for arg_name, desc in self.getargs.items():
 
             # tuple (task_id, key_name)
             parts = desc
-            if isinstance(parts, six.string_types) or len(parts) != 2:
+            if isinstance(parts, str) or len(parts) != 2:
                 msg = ("Taskid '%s' - Invalid format for getargs of '%s'.\n" %
                        (self.name, arg_name) +
                        "Should be tuple with 2 elements " +
@@ -263,7 +340,9 @@ class Task(object):
                 raise InvalidTask(msg)
 
             if parts[0] not in self.setup_tasks:
-                self.setup_tasks.append(parts[0])
+                check_result.add(parts[0])
+
+        return [result_dep(t, setup_dep=True) for t in check_result]
 
 
     @staticmethod
@@ -299,7 +378,8 @@ class Task(object):
     def actions(self):
         """lazy creation of action instances"""
         if self._action_instances is None:
-            self._action_instances = [create_action(a, self) for a in self._actions]
+            self._action_instances = [
+                create_action(a, self) for a in self._actions]
         return self._action_instances
 
 
@@ -326,6 +406,7 @@ class Task(object):
         """Executes the task.
         @return failure: see CmdAction.execute
         """
+        self.init_options()
         task_stdout, task_stderr = self._get_out_err(out, err, verbosity)
         for action in self.actions:
             action_return = action.execute(task_stdout, task_stderr)
@@ -352,6 +433,7 @@ class Task(object):
         @ivar dryrun (bool): if True clean tasks are not executed
                              (just print out what would be executed)
         """
+        self.init_options()
         # if clean is True remove all targets
         if self._remove_targets is True:
             clean_targets(self, dryrun)
@@ -363,8 +445,8 @@ class Task(object):
 
                 # add extra arguments used by clean actions
                 if isinstance(action, PythonAction):
-                    action_args = inspect.getargspec(action.py_callable).args
-                    if 'dryrun' in action_args:
+                    action_sig = inspect.signature(action.py_callable)
+                    if 'dryrun' in action_sig.parameters:
                         action.kwargs['dryrun'] = dryrun
 
                 if not dryrun:
@@ -386,8 +468,19 @@ class Task(object):
         return "<Task: %s>"% self.name
 
 
-    # when using multiprocessing Tasks are pickled.
     def __getstate__(self):
+        """remove attributes that never used on process that only execute tasks
+        """
+        to_pickle = self.__dict__.copy()
+        # never executed in sub-process
+        to_pickle['uptodate'] = None
+        to_pickle['value_savers'] = None
+        # can be re-recreated on demand
+        to_pickle['_action_instances'] = None
+        return to_pickle
+
+    # when using multiprocessing Tasks are pickled.
+    def pickle_safe_dict(self):
         """remove attributes that might contain unpickleble content
         mostly probably closures
         """
@@ -401,12 +494,12 @@ class Task(object):
         del to_pickle['uptodate']
         return to_pickle
 
-    def __eq__(self, other):
-        return self.name == other.name
-
     def update_from_pickle(self, pickle_obj):
         """update self with data from pickled Task"""
-        self.__dict__.update(pickle_obj.__dict__)
+        self.__dict__.update(pickle_obj)
+
+    def __eq__(self, other):
+        return self.name == other.name
 
     def __lt__(self, other):
         """used on default sorting of tasks (alphabetically by name)"""
@@ -426,15 +519,15 @@ def dict_to_task(task_dict):
     # check required fields
     if 'actions' not in task_dict:
         raise InvalidTask("Task %s must contain 'actions' field. %s" %
-                          (task_dict['name'],task_dict))
+                          (task_dict['name'], task_dict))
 
     # user friendly. dont go ahead with invalid input.
-    task_attrs = list(six.iterkeys(task_dict))
-    valid_attrs = set(six.iterkeys(Task.valid_attr))
+    task_attrs = list(task_dict.keys())
+    valid_attrs = set(Task.valid_attr.keys())
     for key in task_attrs:
         if key not in valid_attrs:
             raise InvalidTask("Task %s contains invalid field: '%s'"%
-                              (task_dict['name'],key))
+                              (task_dict['name'], key))
 
     return Task(**task_dict)
 
@@ -447,7 +540,7 @@ def clean_targets(task, dryrun):
 
     # remove all files
     for file_ in files:
-        six.print_("%s - removing file '%s'" % (task.name, file_))
+        print("%s - removing file '%s'" % (task.name, file_))
         if not dryrun:
             os.remove(file_)
 
@@ -455,9 +548,65 @@ def clean_targets(task, dryrun):
     for dir_ in dirs:
         if os.listdir(dir_):
             msg = "%s - cannot remove (it is not empty) '%s'"
-            six.print_(msg % (task.name, dir_))
+            print(msg % (task.name, dir_))
         else:
             msg = "%s - removing dir '%s'"
-            six.print_(msg % (task.name, dir_))
+            print(msg % (task.name, dir_))
             if not dryrun:
                 os.rmdir(dir_)
+
+
+def _return_param(val):
+    '''just return passed parameter - make a callable from any value'''
+    return val
+
+# uptodate
+class result_dep(UptodateCalculator):
+    """check if result of the given task was modified
+    """
+    def __init__(self, dep_task_name, setup_dep=False):
+        '''
+        :param setup_dep: controls if dependent task is task_dep or setup
+        '''
+        self.dep_name = dep_task_name
+        self.setup_dep = setup_dep
+        self.result_name = '_result:%s' % self.dep_name
+
+    def configure_task(self, task):
+        """to be called by doit when create the task"""
+        # result_dep creates an implicit task_dep
+        if self.setup_dep:
+            task.setup_tasks.append(self.dep_name)
+        else:
+            task.task_dep.append(self.dep_name)
+
+
+    def _result_single(self):
+        """get result from a single task"""
+        return self.get_val(self.dep_name, 'result:')
+
+    def _result_group(self, dep_task):
+        """get result from a group task
+        the result is the combination of results of all sub-tasks
+        """
+        prefix = dep_task.name + ":"
+        sub_tasks = {}
+        for sub in dep_task.task_dep:
+            if sub.startswith(prefix):
+                sub_tasks[sub] = self.get_val(sub, 'result:')
+        return sub_tasks
+
+    def __call__(self, task, values):
+        """return True if result is the same as last run"""
+        dep_task = self.tasks_dict[self.dep_name]
+        if not dep_task.has_subtask:
+            dep_result = self._result_single()
+        else:
+            dep_result = self._result_group(dep_task)
+        func = partial(_return_param, {self.result_name: dep_result})
+        task.value_savers.append(func)
+
+        last_success = values.get(self.result_name)
+        if last_success is None:
+            return False
+        return last_success == dep_result

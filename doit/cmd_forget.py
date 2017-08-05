@@ -22,12 +22,10 @@ class Forget(DoitCmdBase):
     def _execute(self, forget_sub):
         """remove saved data successful runs from DB
         """
-        dependency_manager = self.dep_class(self.dep_file)
-
         # no task specified. forget all
         if not self.sel_tasks:
-            dependency_manager.remove_all()
-            self.outstream.write("forgeting all tasks\n")
+            self.dep_manager.remove_all()
+            self.outstream.write("forgetting all tasks\n")
 
         # forget tasks from list
         else:
@@ -46,7 +44,6 @@ class Forget(DoitCmdBase):
 
             for task in to_forget:
                 # forget it - remove from dependency file
-                dependency_manager.remove(task.name)
-                self.outstream.write("forgeting %s\n" % task.name)
-
-        dependency_manager.close()
+                self.dep_manager.remove(task.name)
+                self.outstream.write("forgetting %s\n" % task.name)
+        self.dep_manager.close()

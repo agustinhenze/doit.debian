@@ -2,39 +2,72 @@
 
 {% block extrahead %}
 <style>
+  body {
+    font-size: 16px;
+  }
+
   div.topic {
-    padding: 2px;
+    padding: 0;
     background-color: #F8F4A6;
-    border: none;
+    border: 1px solid #D8D486;
+  }
+
+  div.topic p.first {
+    margin: 0;
+    padding: 0.1em 0 0.1em 0.5em;
+    background-color: #E8E496;
+    border-bottom: 1px solid #C8C476;
+  }
+
+  div.topic p {
+    margin: 0.5em 1em 0.5em 1em;
   }
 
   p.topic-title {
     display: run-in;
     margin-right: 15px;
   }
+
+  a.external-link {
+    background: url(_static/external.png) center right no-repeat;
+    padding-right: 13px;
+  }
+
+  div.related ul li a.external-link {
+    padding-right: 13px;
+  }
+
+  .sidebartext {
+    font-size: 75%;
+    line-height: 130%;
+  }
+
 </style>
 
 {% if include_analytics %}
-<script type="text/javascript">
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  var _gaq = _gaq || [];
-  _gaq.push(['_setAccount', 'UA-29887834-3']);
-  _gaq.push(['_setDomainName', 'pydoit.org']);
-  _gaq.push(['_trackPageview']);
-
-  (function() {
-    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-  })();
+  ga('create', 'UA-29887834-3', 'auto');
+  ga('send', 'pageview');
 </script>
 {% endif %}
+
 {% endblock %}
 
 
 {% block rootrellink %}
-        <li><a href="{{ pathto('index') }}">Home</a>&nbsp;|&nbsp;</li>
-        <li><a href="{{ pathto('contents') }}">Documentation</a>&raquo;</li>
+  <li><a href="{{ pathto('index') }}">Home</a>&nbsp;|&nbsp;</li>
+  <li><a href="{{ pathto('contents') }}">Documentation</a>&nbsp;|&nbsp;</li>
+  <!-- TODO news -->
+  <li><a class="external-link" href="https://github.com/pydoit/doit">Code</a>&nbsp;|&nbsp;</li>
+  <li><a class="external-link" href="https://github.com/pydoit/doit/issues">Issues</a>&nbsp;|&nbsp;</li>
+  <li><a class="external-link" href="http://pypi.python.org/pypi/doit">Download</a>&nbsp;|&nbsp;</li>
+  <li><a class="external-link" href="http://groups.google.co.in/group/python-doit">Forum</a>&nbsp;|&nbsp;</li>
+  <li><a class="external-link" href="https://twitter.com/py_doit">Twitter</a></li>
 {% endblock %}
 
 
@@ -46,50 +79,43 @@
 
 
 {% block sidebarsearch %}
+
 {{ super() }}
 
-<h3>Project Links</h3>
-<ul>
-  <li><a href="http://pypi.python.org/pypi/doit">download (PyPi)</a></li>
-  <li><a href="https://bitbucket.org/schettino72/doit">code &amp; bugs (bitbucket)</a></li>
-  <li><a href="https://groups.google.com/forum/#!forum/python-doit">discussion (google)</a></li>
-  <li><a href="http://blog.schettino72.net/categories/doit.html">blog</a></li>
-  <li><a href="https://bitbucket.org/schettino72/doit-recipes/wiki/Home">doit-recipes</a></li>
-</ul>
-
-
-<h3>Sponsors</h3>
-<em>Your logo here</em>
-
-<h3>Sponsor/Donate to <em>doit</em></h3>
-
-{% if include_gittip %}
-<script data-gittip-username="schettino72"
-        data-gittip-widget="button"
-        src="//gttp.co/v1.js"></script>
+{% if include_donate %}
+<h3>Funding Campaign</h3>
+<iframe src="https://www.indiegogo.com/project/doit-python-automation-tool-release-0-30/embedded/2922409" width="222px" height="445px" frameborder="0" scrolling="no"></iframe>
 {% endif %}
 
-<div style="margin-left:2em;">
-<form action="https://www.paypal.com/cgi-bin/webscr" method="post">
+<h3>Sponsors</h3>
+
+<div>
+  <a href="http://pygarden.com"><img src="_static/pygarden.png" alt="pygarden.com logo" style="display:block; margin:auto;"/></a><br/>
+</div>
+
+
+<h3>Donate</h3>
+
+{% if include_donate %}
+<div>
+<form action="https://www.paypal.com/cgi-bin/webscr" method="post" target="_top" style="margin:auto;">
 <input type="hidden" name="cmd" value="_s-xclick">
-<input type="hidden" name="hosted_button_id" value="BFF4G58USYPBA">
+<input type="hidden" name="hosted_button_id" value="GFU3BPVN586A6">
 <input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif" border="0" name="submit" alt="PayPal - The safer, easier way to pay online!">
 <img alt="" border="0" src="https://www.paypalobjects.com/pt_BR/i/scr/pixel.gif" width="1" height="1">
 </form>
 </div>
+{% endif %}
 <br/>
 
-<div style="font-size:75%">
-Why Donate? Donations will be used to sponsor futher development of the project.<br/>
-<br/>
-For coorporate donations the logo of your company will be placed on this website side-bar (see above). For more information please contact <em>schettino72</em>&#64<span>gmail.com</span><br/>
+<div class="sidebartext">
+If you use <em>doit</em> and think it is a useful project. Please consider to make a donation to support the developer/maintainer with maintanance tasks (bug fixes, merge patches, reply users) and further development.<br/>
 </div>
-
 
 
 {# logo - python #}
 <h3></h3>
-<a href="http://python.org"><img src="_static/python-powered-w-100x40.png" /></a><br/><br/>
+<a href="http://python.org"><img src="_static/python-powered-w-100x40.png" alt="python logo"/></a><br/><br/>
 {% endblock %}
 
 {% block sidebarrel %}

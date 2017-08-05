@@ -4,13 +4,7 @@ use by cmd_auto module
 
 import os.path
 
-def get_platform_system():
-    """return platform.system
-    platform module has many regexp, so importing it is slow...
-    import only if required
-    """
-    import platform
-    return platform.system()
+from .compat import get_platform_system
 
 
 class FileModifyWatcher(object):
@@ -75,14 +69,7 @@ class FileModifyWatcher(object):
             observer.schedule(stream)
 
         observer.daemon = True
-        observer.start()
-        try:
-            # hack to keep main thread running...
-            import time
-            while True:
-                time.sleep(99999)
-        except (SystemExit, KeyboardInterrupt):
-            pass
+        observer.run()
 
 
     def _loop_linux(self, loop_callback):
@@ -97,7 +84,7 @@ class FileModifyWatcher(object):
         event_handler = EventHandler()
         notifier = pyinotify.Notifier(watch_manager, event_handler)
 
-        mask = pyinotify.IN_CLOSE_WRITE
+        mask = pyinotify.IN_CLOSE_WRITE | pyinotify.IN_MOVED_TO
         for watch_this in self.watch_dirs:
             watch_manager.add_watch(watch_this, mask)
 

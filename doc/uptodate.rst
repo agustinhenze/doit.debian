@@ -2,9 +2,12 @@
 custom uptodate
 ================
 
-The basics of `uptodate` was already introduced. Here we look in more
+The basics of `uptodate` was already :ref:`introduced <attr-uptodate>`.
+Here we look in more
 detail into some implementations shipped with `doit`. And the API used by those.
 
+
+.. _result_dep:
 
 result-dependency
 ----------------------
@@ -34,9 +37,10 @@ For cmd-actions it is the output send to stdout plus stderr.
 result of all subtasks did not change. And also the existing sub-tasks are
 the same.
 
+.. _run_once:
 
 
-run-once
+run_once()
 ---------------
 
 Sometimes there is no dependency for a task but you do not want to execute it
@@ -63,9 +67,10 @@ Note that even with *run_once* the file will be downloaded again in case the tar
     .  get_pylogo
 
 
+.. _timeout:
 
-timeout
----------
+timeout()
+-----------
 
 ``timeout`` is used to expire a task after a certain time interval.
 
@@ -79,9 +84,10 @@ time it was executed is bigger than 5 minutes.
 parameter. It returns a callable suitable to be used as an ``uptodate`` callable.
 
 
+.. _config_changed:
 
-config_changed
----------------
+config_changed()
+-----------------
 
 ``config_changed`` is used to check if any "configuration" value for the task has
 changed. Config values can be a string or dict.
@@ -92,8 +98,10 @@ and only a digest/checksum of the dictionaries keys and values are saved.
 .. literalinclude:: tutorial/config_params.py
 
 
-check_timestamp_unchanged
---------------------------
+.. _check_timestamp_unchanged:
+
+check_timestamp_unchanged()
+-----------------------------
 
 ``check_timestamp_unchanged`` is used to check if specified timestamp of a given
 file/dir is unchanged since last run.
@@ -132,20 +140,11 @@ This section will explain how to extend ``doit`` writing an ``uptodate``
 implementation. So unless you need to write an ``uptodate`` implementation
 you can skip this.
 
-The callable must take at least two positional parameters ``task`` and ``values``.
-The callable can also be represented by a tuple (callable, args, kwargs).
-
-   -  ``task`` parameter will give you access to task object. So you have access
-      to its metadata and opportunity to modify the task itself!
-   -  ``values`` is a dictionary with the computed values saved in the last
-       successful execution of the task.
-
-
-Let's start with trivial example.
+Let's start with trivial example. `uptodate` is a function that returns
+a boolean value.
 
 .. literalinclude:: tutorial/uptodate_callable.py
 
-Note that `check_outdated` function is not actually using the parameters.
 You could also execute this function in the task-creator and pass the value
 to to `uptodate`. The advantage of just passing the callable is that this
 check will not be executed at all if the task was not selected to be executed.
@@ -168,6 +167,15 @@ callables. These callables should return a dict that will be saved together
 with other task values. The ``value_savers`` will be executed after all actions.
 
 The second step is to actually compare the saved value with its "current" value.
+
+The `uptodate` callable can take two positional parameters ``task`` and ``values``. The callable can also be represented by a tuple (callable, args, kwargs).
+
+
+   -  ``task`` parameter will give you access to task object. So you have access
+      to its metadata and opportunity to modify the task itself!
+   -  ``values`` is a dictionary with the computed values saved in the last
+       successful execution of the task.
+
 
 Let's take a look in the ``run_once`` implementation.
 
@@ -225,7 +233,8 @@ Example: result_dep implementation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The ``result_dep`` is more complicated due to two factors. It needs to modify
-the task's ``task_dep``. It needs to check the task's saved values and metadata
+the task's ``task_dep``.
+And it needs to check the task's saved values and metadata
 from a task different from where it is being applied.
 
 A ``result_dep`` implies that its dependency is also a ``task_dep``.
@@ -242,47 +251,4 @@ all task objects where the ``key`` is the task name (this is used to get all
 sub-tasks from a task-group). And also a method called ``get_val`` to access
 the saved values and results from any task.
 
-
-.. code-block:: python
-
-    class result_dep(UptodateCalculator):
-        """check if result of the given task was modified
-        """
-        def __init__(self, dep_task_name):
-            self.dep_name = dep_task_name
-            self.result_name = '_result:%s' % self.dep_name
-
-        def configure_task(self, task):
-            """to be called by doit when create the task"""
-            # result_dep creates an implicit task_dep
-            task.task_dep.append(self.dep_name)
-
-        def _result_single(self):
-            """get result from a single task"""
-            return self.get_val(self.dep_name, 'result:')
-
-        def _result_group(self, dep_task):
-            """get result from a group task
-            the result is the combination of results of all sub-tasks
-            """
-            prefix = dep_task.name + ":"
-            sub_tasks = {}
-            for sub in dep_task.task_dep:
-                if sub.startswith(prefix):
-                    sub_tasks[sub] = self.get_val(sub, 'result:')
-            return sub_tasks
-
-        def __call__(self, task, values):
-            """return True if result is the same as last run"""
-            dep_task = self.tasks_dict[self.dep_name]
-            if not dep_task.has_subtask:
-                dep_result = self._result_single()
-            else:
-                dep_result = self._result_group(dep_task)
-            task.value_savers.append(lambda: {self.result_name: dep_result})
-
-            last_success = values.get(self.result_name)
-            if last_success is None:
-                return False
-            return (last_success == dep_result)
-
+See the `result_dep` `source <https://github.com/pydoit/doit/blob/master/doit/task.py>`_.

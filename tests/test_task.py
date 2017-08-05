@@ -1,9 +1,7 @@
-# coding=UTF-8
-
 import os, shutil
 import tempfile
-import six
-from six import StringIO
+from io import StringIO
+from pathlib import Path, PurePath
 
 import pytest
 
@@ -37,6 +35,27 @@ class TestTaskCheckInput(object):
 
 
 
+class TestTaskCompare(object):
+    def test_equal(self):
+        # only task name is used to compare for equality
+        t1 = task.Task("foo", None)
+        t2 = task.Task("bar", None)
+        t3 = task.Task("foo", None)
+        assert t1 != t2
+        assert t1 == t3
+
+
+    def test_lt(self):
+        # task name is used to compare/sort tasks
+        t1 = task.Task("foo", None)
+        t2 = task.Task("bar", None)
+        t3 = task.Task("gee", None)
+        assert t1 > t2
+        sorted_names = sorted(t.name for t in (t1,t2,t3))
+        assert sorted_names == ['bar', 'foo', 'gee']
+
+
+
 class TestTaskInit(object):
 
     def test_groupTask(self):
@@ -58,13 +77,20 @@ class TestTaskInit(object):
         # when task is created, options contain the default values
         p1 = {'name':'p1', 'default':'p1-default'}
         p2 = {'name':'p2', 'default':'', 'short':'m'}
-        t = task.Task("MyName", None, params=[p1, p2])
+        t = task.Task("MyName", None, params=[p1, p2], pos_arg='pos')
+        t.execute()
         assert 'p1-default' == t.options['p1']
         assert '' == t.options['p2']
+        assert 'pos' == t.pos_arg
+        assert None == t.pos_arg_val # always unitialized
 
     def test_setup(self):
         t = task.Task("task5", ['action'], setup=["task2"])
         assert ["task2"] == t.setup_tasks
+
+    def test_forbid_equal_sign_on_name(self):
+        pytest.raises(task.InvalidTask,
+                      task.Task, "a=1", ["taskcmd"])
 
 
 class TestTaskValueSavers(object):
@@ -93,7 +119,7 @@ class TestTaskUpToDate(object):
 
     def test_callable_instance_method(self):
         class Base(object):
-            def check(): return True
+            def check(self): return True
         base = Base()
         t = task.Task("Task X", ["taskcmd"], uptodate=[base.check])
         assert t.uptodate[0] == (base.check, [], {})
@@ -129,12 +155,17 @@ class TestTaskExpandFileDep(object):
         my_task = task.Task("Task X", ["taskcmd"], file_dep=["123","456"])
         assert set(["123","456"]) == my_task.file_dep
 
-    def test_file_dep_must_be_string(self):
+    def test_file_dep_path(self):
+        my_task = task.Task("Task X", ["taskcmd"],
+                            file_dep=["123", Path("456"), PurePath("789")])
+        assert {"123", "456", "789"} == my_task.file_dep
+
+    def test_file_dep_str(self):
         pytest.raises(task.InvalidTask, task.Task, "Task X", ["taskcmd"],
-                       file_dep=[['aaaa']])
+                      file_dep=[['aaaa']])
 
     def test_file_dep_unicode(self):
-        unicode_name = six.u("中文")
+        unicode_name = "中文"
         my_task = task.Task("Task X", ["taskcmd"], file_dep=[unicode_name])
         assert unicode_name in my_task.file_dep
 
@@ -165,12 +196,32 @@ class TestTaskDeps(object):
         assert [(None, None, None), (True, None, None)] == my_task.uptodate
 
 
+class TestTaskTargets(object):
+    def test_targets_can_be_path(self):
+        my_task = task.Task("Task X", ["taskcmd"],
+                            targets=["123", Path("456"), PurePath("789")])
+        assert ["123", "456", "789"] == my_task.targets
+
+    def test_targets_should_be_string_or_path(self):
+        assert pytest.raises(task.InvalidTask, task.Task, "Task X", ["taskcmd"],
+                             targets=["123", Path("456"), 789])
+
+
+class TestTask_Loader(object):
+    def test_delayed_after_execution(self):
+        # after `executed` creates an implicit task_dep
+        delayed = task.DelayedLoader(lambda: None, executed='foo')
+        t1 = task.Task('bar', None, loader=delayed)
+        assert t1.task_dep == ['foo']
+
+
 class TestTask_Getargs(object):
     def test_ok(self):
         getargs = {'x' : ('t1','x'), 'y': ('t2','z')}
         t = task.Task('t3', None, getargs=getargs)
-        assert 't1' in t.setup_tasks
-        assert 't2' in t.setup_tasks
+        assert len(t.uptodate) == 2
+        assert ['t1', 't2'] == sorted([t.uptodate[0][0].dep_name,
+                                       t.uptodate[1][0].dep_name])
 
     def test_invalid_desc(self):
         getargs = {'x' : 't1'}
@@ -252,8 +303,7 @@ class TestTaskActions(object):
     # python and commands mixed on same task
     def test_mixed(self):
         def my_print(msg):
-            import sys # python3 2to3 cant handle print with a trailing comma
-            sys.stdout.write(msg)
+            print(msg, end='')
         t = task.Task("taskX",["%s hi_stdout hi2" % PROGRAM,
                                (my_print,['_PY_']),
                                "%s hi_list hi6" % PROGRAM])
@@ -268,6 +318,7 @@ class TestTaskTeardown(object):
         def put(x):
             got.append(x)
         t = task.Task('t1', [], teardown=[(put, [1]), (put, [2])])
+        t.execute()
         assert None == t.execute_teardown()
         assert [1,2] == got
 
@@ -275,6 +326,7 @@ class TestTaskTeardown(object):
         def my_raise():
             raise Exception('hoho')
         t = task.Task('t1', [], teardown=[(my_raise,)])
+        t.execute()
         got = t.execute_teardown()
         assert isinstance(got, CatchedException)
 
@@ -373,7 +425,7 @@ class TestTaskClean(object):
 
     def test_clean_action_kwargs(self):
         def fail_clean(dryrun):
-            six.print_('hello %s' % dryrun)
+            print('hello %s' % dryrun)
         t = task.Task("xxx", None, clean=[(fail_clean,)])
         assert 1 == len(t.clean_actions)
         out = StringIO()
@@ -432,6 +484,21 @@ class TestTaskDoc(object):
         t = task.Task("name", ["action"], doc="  \n  \n\n")
         assert "" == t.doc
 
+class TestTaskPickle(object):
+    def test_geststate(self):
+        t = task.Task("my_name", ["action"])
+        pd = t.__getstate__()
+        assert None == pd['uptodate']
+        assert None == pd['_action_instances']
+
+    def test_safedict(self):
+        t = task.Task("my_name", ["action"])
+        pd = t.pickle_safe_dict()
+        assert 'uptodate' not in pd
+        assert '_action_instances' not in pd
+        assert 'value_savers' not in pd
+        assert 'clean_actions' not in pd
+
 
 class TestTaskUpdateFromPickle(object):
     def test_change_value(self):
@@ -440,7 +507,7 @@ class TestTaskUpdateFromPickle(object):
         class FakePickle():
             def __init__(self):
                 self.values = [1,2,3]
-        t.update_from_pickle(FakePickle())
+        t.update_from_pickle(FakePickle().__dict__)
         assert [1,2,3] == t.values
         assert 'my_name' == t.name
 
@@ -455,3 +522,72 @@ class TestDictToTask(object):
 
     def testDictMissingFieldAction(self):
         pytest.raises(action.InvalidTask, task.dict_to_task, {'name':'xpto 14'})
+
+
+
+class TestResultDep(object):
+    def test_single(self, depfile):
+        dep_manager = depfile
+
+        tasks = {'t1': task.Task("t1", None, uptodate=[task.result_dep('t2')]),
+                 't2': task.Task("t2", None),
+                 }
+        # _config_task was executed and t2 added as task_dep
+        assert ['t2'] == tasks['t1'].task_dep
+
+        # first t2 result
+        tasks['t2'].result = 'yes'
+        dep_manager.save_success(tasks['t2'])
+        assert 'run' == dep_manager.get_status(tasks['t1'], tasks).status  # first time
+
+        tasks['t1'].save_extra_values()
+        dep_manager.save_success(tasks['t1'])
+        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks).status
+
+        # t2 result changed
+        tasks['t2'].result = '222'
+        dep_manager.save_success(tasks['t2'])
+
+        tasks['t1'].save_extra_values()
+        dep_manager.save_success(tasks['t1'])
+        assert 'run' == dep_manager.get_status(tasks['t1'], tasks).status
+
+        tasks['t1'].save_extra_values()
+        dep_manager.save_success(tasks['t1'])
+        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks).status
+
+
+    def test_group(self, depfile):
+        dep_manager = depfile
+
+        tasks = {'t1': task.Task("t1", None, uptodate=[task.result_dep('t2')]),
+                 't2': task.Task("t2", None, task_dep=['t2:a', 't2:b'],
+                                 has_subtask=True),
+                 't2:a': task.Task("t2:a", None),
+                 't2:b': task.Task("t2:b", None),
+                 }
+        # _config_task was executed and t2 added as task_dep
+        assert ['t2'] == tasks['t1'].task_dep
+
+        # first t2 result
+        tasks['t2:a'].result = 'yes1'
+        dep_manager.save_success(tasks['t2:a'])
+        tasks['t2:b'].result = 'yes2'
+        dep_manager.save_success(tasks['t2:b'])
+        assert 'run' == dep_manager.get_status(tasks['t1'], tasks).status  # first time
+
+        tasks['t1'].save_extra_values()
+        dep_manager.save_success(tasks['t1'])
+        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks).status
+
+        # t2 result changed
+        tasks['t2:a'].result = '222'
+        dep_manager.save_success(tasks['t2:a'])
+
+        tasks['t1'].save_extra_values()
+        dep_manager.save_success(tasks['t1'])
+        assert 'run' == dep_manager.get_status(tasks['t1'], tasks).status
+
+        tasks['t1'].save_extra_values()
+        dep_manager.save_success(tasks['t1'])
+        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks).status

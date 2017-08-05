@@ -3,7 +3,7 @@ from collections import deque
 import pytest
 
 from doit.exceptions import InvalidDodoFile, InvalidCommand
-from doit.task import InvalidTask, Task
+from doit.task import InvalidTask, Task, DelayedLoader
 from doit.control import TaskControl, TaskDispatcher, ExecNode
 from doit.control import no_none
 
@@ -101,10 +101,98 @@ class TestTaskControlCmdOptions(object):
         tc =  TaskControl(tasks)
         assert ['tX'] == tc._filter_tasks(["targetX"])
 
+    def test_filter_delayed_subtask(self):
+        t1 = Task("taskX", None)
+        t2 = Task("taskY", None, loader=DelayedLoader(lambda: None))
+        control = TaskControl([t1, t2])
+        control._filter_tasks(['taskY:foo'])
+        assert isinstance(t2.loader, DelayedLoader)
+        # sub-task will use same loader, and keep parent basename
+        assert control.tasks['taskY:foo'].loader.basename == 'taskY'
+        assert control.tasks['taskY:foo'].loader is t2.loader
+
+    def test_filter_delayed_regex_single(self):
+        t1 = Task("taskX", None)
+        t2 = Task("taskY", None,
+                  loader=DelayedLoader(lambda: None, target_regex='a.*'))
+        t3 = Task("taskZ", None,
+                  loader=DelayedLoader(lambda: None, target_regex='b.*'))
+        t4 = Task("taskW", None,
+                  loader=DelayedLoader(lambda: None))
+        control = TaskControl([t1, t2, t3, t4], auto_delayed_regex=False)
+        selected = control._filter_tasks(['abc'])
+        assert isinstance(t2.loader, DelayedLoader)
+        assert len(selected) == 1
+        assert selected[0] == '_regex_target_abc:taskY'
+        sel_task = control.tasks['_regex_target_abc:taskY']
+        assert sel_task.file_dep == {'abc'}
+        assert sel_task.loader.basename == 'taskY'
+        assert sel_task.loader is t2.loader
+
+    def test_filter_delayed_multi_select(self):
+        t1 = Task("taskX", None)
+        t2 = Task("taskY", None,
+                  loader=DelayedLoader(lambda: None, target_regex='a.*'))
+        t3 = Task("taskZ", None,
+                  loader=DelayedLoader(lambda: None, target_regex='b.*'))
+        t4 = Task("taskW", None,
+                  loader=DelayedLoader(lambda: None))
+        control = TaskControl([t1, t2, t3, t4], auto_delayed_regex=False)
+        selected = control._filter_tasks(['abc', 'att'])
+        assert isinstance(t2.loader, DelayedLoader)
+        assert len(selected) == 2
+        assert selected[0] == '_regex_target_abc:taskY'
+        assert selected[1] == '_regex_target_att:taskY'
+
+    def test_filter_delayed_regex_multiple_match(self):
+        t1 = Task("taskX", None)
+        t2 = Task("taskY", None,
+                  loader=DelayedLoader(lambda: None, target_regex='a.*'))
+        t3 = Task("taskZ", None,
+                  loader=DelayedLoader(lambda: None, target_regex='ab.'))
+        t4 = Task("taskW", None,
+                  loader=DelayedLoader(lambda: None))
+        control = TaskControl([t1, t2, t3, t4], auto_delayed_regex=False)
+        selected = control._filter_tasks(['abc'])
+        assert len(selected) == 2
+        assert (sorted(selected) ==
+                ['_regex_target_abc:taskY', '_regex_target_abc:taskZ'])
+        assert control.tasks['_regex_target_abc:taskY'].file_dep == {'abc'}
+        assert control.tasks['_regex_target_abc:taskZ'].file_dep == {'abc'}
+        assert (control.tasks['_regex_target_abc:taskY'].loader.basename ==
+                t2.name)
+        assert (control.tasks['_regex_target_abc:taskZ'].loader.basename ==
+                t3.name)
+
+    def test_filter_delayed_regex_auto(self):
+        t1 = Task("taskX", None)
+        t2 = Task("taskY", None,
+                  loader=DelayedLoader(lambda: None, target_regex='a.*'))
+        t3 = Task("taskZ", None,
+                  loader=DelayedLoader(lambda: None))
+        control = TaskControl([t1, t2, t3], auto_delayed_regex=True)
+        selected = control._filter_tasks(['abc'])
+        assert len(selected) == 2
+        assert (sorted(selected) ==
+                ['_regex_target_abc:taskY', '_regex_target_abc:taskZ'])
+        assert control.tasks['_regex_target_abc:taskY'].file_dep == {'abc'}
+        assert control.tasks['_regex_target_abc:taskZ'].file_dep == {'abc'}
+        assert (control.tasks['_regex_target_abc:taskY'].loader.basename ==
+                t2.name)
+        assert (control.tasks['_regex_target_abc:taskZ'].loader.basename ==
+                t3.name)
+
+
     # filter a non-existent task raises an error
     def testFilterWrongName(self):
         tc =  TaskControl(TASKS_SAMPLE)
         pytest.raises(InvalidCommand, tc._filter_tasks, ['no'])
+
+    def testFilterWrongSubtaskName(self):
+        t1 = Task("taskX", None)
+        t2 = Task("taskY", None)
+        tc =  TaskControl([t1, t2])
+        pytest.raises(InvalidCommand, tc._filter_tasks, ['taskX:no'])
 
     def testFilterEmptyList(self):
         filter_ = []
@@ -116,6 +204,14 @@ class TestTaskControlCmdOptions(object):
         tc = TaskControl(TASKS_SAMPLE)
         assert ['t3', 't1'] == tc._filter_tasks(options)
         assert "hello option!" == tc.tasks['t3'].options['opt1']
+
+    def testPosParam(self):
+        tasks = list(TASKS_SAMPLE)
+        tasks.append(Task("tP", [""],[],[], pos_arg='myp'))
+        tc = TaskControl(tasks)
+        args = ["tP", "hello option!", "t1"]
+        assert ['tP',] == tc._filter_tasks(args)
+        assert ["hello option!", "t1"] == tc.tasks['tP'].pos_arg_val
 
 
 class TestExecNode(object):
@@ -359,6 +455,205 @@ class TestTaskDispatcher_add_task(object):
         assert tasks['t1'] == next(gen)  # second time
 
 
+    def test_delayed_creation(self):
+        def creator():
+            yield Task('foo', None, loader=DelayedLoader(lambda : None))
+        delayed_loader = DelayedLoader(creator, executed='t2')
+        tasks = {'t1': Task('t1', None, loader=delayed_loader),
+                 't2': Task('t2', None),
+                 }
+        td = TaskDispatcher(tasks, [], None)
+        n1 = td._gen_node(None, 't1')
+        gen = td._add_task(n1)
+
+        # first returned node is `t2` because it is an implicit task_dep
+        n2 = next(gen)
+        assert n2.task.name == 't2'
+
+        # wait until t2 is finished
+        n3 = next(gen)
+        assert n3 == 'wait'
+
+        # after t2 is done, generator is reseted
+        td._update_waiting(n2)
+        n4 = next(gen)
+        assert n4 == "reset generator"
+
+        # recursive loader is preserved
+        assert isinstance(td.tasks['foo'].loader, DelayedLoader)
+        pytest.raises(AssertionError, next, gen)
+
+
+    def test_delayed_creation_sub_task(self):
+        # usually a repeated loader is replaced by the real task
+        # when it is first executed, the problem arises when the
+        # the expected task is not actually created
+        def creator():
+            yield Task('t1:foo', None)
+            yield Task('t1:bar', None)
+        delayed_loader = DelayedLoader(creator, executed='t2')
+        tasks = {
+            't1': Task('t1', None, loader=delayed_loader),
+            't2': Task('t2', None),}
+
+        # simulate a sub-task from delayed created added to task_list
+        tasks['t1:foo'] = Task('t1:foo', None, loader=delayed_loader)
+        tasks['t1:xxx'] = Task('t1:xxx', None, loader=delayed_loader)
+        delayed_loader.basename = 't1'
+
+        td = TaskDispatcher(tasks, [], None)
+        n1 = td._gen_node(None, 't1:foo')
+        gen = td._add_task(n1)
+
+        # first returned node is `t2` because it is an implicit task_dep
+        n1b = next(gen)
+        assert n1b.task.name == 't2'
+
+        # wait until t2 is finished
+        n1c = next(gen)
+        assert n1c == 'wait'
+
+        # after t2 is done, generator is reseted
+        n1b.run_status = 'successful'
+        td._update_waiting(n1b)
+        n1d = next(gen)
+        assert n1d == "reset generator"
+        assert 't1:foo' in td.tasks
+        assert 't1:bar' in td.tasks
+
+        # finish with t1:foo
+        gen2 = td._add_task(n1)
+        n1.reset_task(td.tasks[n1.task.name], gen2)
+        n2 = next(gen2)
+        assert n2.name == 't1:foo'
+        pytest.raises(StopIteration, next, gen2)
+
+        # try non-existent t1:xxx
+        n3 = td._gen_node(None, 't1:xxx')
+        gen3 = td._add_task(n3)
+        # ? should raise a runtime error?
+        assert next(gen3) == 'reset generator'
+
+
+    def test_delayed_creation_target_regex(self):
+        def creator():
+            yield Task('foo', None, targets=['tgt1'])
+        delayed_loader = DelayedLoader(creator,
+                                       executed='t2', target_regex='tgt1')
+        tasks = {
+            't1': Task('t1', None, loader=delayed_loader),
+            't2': Task('t2', None),
+        }
+
+        tc = TaskControl(list(tasks.values()))
+        selection = tc._filter_tasks(['tgt1'])
+        assert ['_regex_target_tgt1:t1'] == selection
+        td = TaskDispatcher(tc.tasks, tc.targets, selection)
+
+        n1 = td._gen_node(None, '_regex_target_tgt1:t1')
+        gen = td._add_task(n1)
+
+        # first returned node is `t2` because it is an implicit task_dep
+        n2 = next(gen)
+        assert n2.task.name == 't2'
+
+        # wait until t2 is finished
+        n3 = next(gen)
+        assert n3 == 'wait'
+
+        # after t2 is done, generator is reseted
+        n2.run_status = 'done'
+        td._update_waiting(n2)
+        n4 = next(gen)
+        assert n4 == "reset generator"
+
+        # manually reset generator
+        n1.reset_task(td.tasks[n1.task.name], td._add_task(n1))
+
+        # get the delayed created task
+        gen2 = n1.generator  # n1 generator was reset / replaced
+        # get t1 because of its target was a file_dep of _regex_target_tgt1
+        n5 = next(gen2)
+        assert n5.task.name == 'foo'
+
+        # get internal created task
+        n5.run_status = 'done'
+        td._update_waiting(n5)
+        n6 = next(gen2)
+        assert n6.name == '_regex_target_tgt1:t1'
+
+        # file_dep is removed because foo might not be task
+        # that creates this task (support for multi regex matches)
+        assert n6.file_dep == {}
+
+
+    def test_regex_group_already_created(self):
+        # this is required to avoid loading more tasks than required, GH-#60
+        def creator1():
+            yield Task('foo1', None, targets=['tgt1'])
+        delayed_loader1 = DelayedLoader(creator1, target_regex='tgt.*')
+
+        def creator2():  # pragma: no cover
+            yield Task('foo2', None, targets=['tgt2'])
+        delayed_loader2 = DelayedLoader(creator2, target_regex='tgt.*')
+
+        t1 = Task('t1', None, loader=delayed_loader1)
+        t2 = Task('t2', None, loader=delayed_loader2)
+
+        tc = TaskControl([t1, t2])
+        selection = tc._filter_tasks(['tgt1'])
+        assert ['_regex_target_tgt1:t1', '_regex_target_tgt1:t2'] == selection
+        td = TaskDispatcher(tc.tasks, tc.targets, selection)
+
+        n1 = td._gen_node(None, '_regex_target_tgt1:t1')
+        gen = td._add_task(n1)
+
+        # delayed loader executed, so generator is reset
+        n1b = next(gen)
+        assert n1b == "reset generator"
+
+        # manually reset generator
+        n1.reset_task(td.tasks[n1.task.name], td._add_task(n1))
+
+        # get the delayed created task
+        gen1b = n1.generator  # n1 generator was reset / replaced
+        # get t1 because of its target was a file_dep of _regex_target_tgt1
+        n1c = next(gen1b)
+        assert n1c.task.name == 'foo1'
+
+        # get internal created task
+        n1c.run_status = 'done'
+        td._update_waiting(n1c)
+        n1d = next(gen1b)
+        assert n1d.name == '_regex_target_tgt1:t1'
+
+        ## go for second selected task
+        n2 = td._gen_node(None, '_regex_target_tgt1:t2')
+        gen2 = td._add_task(n2)
+        # loader is not executed because target t1 was already found
+        pytest.raises(StopIteration, next, gen2)
+
+
+    def test_regex_not_found(self):
+        def creator1():
+            yield Task('foo1', None, targets=['tgt1'])
+        delayed_loader1 = DelayedLoader(creator1, target_regex='tgt.*')
+
+        t1 = Task('t1', None, loader=delayed_loader1)
+
+        tc = TaskControl([t1])
+        selection = tc._filter_tasks(['tgt666'])
+        assert ['_regex_target_tgt666:t1'] == selection
+        td = TaskDispatcher(tc.tasks, tc.targets, selection)
+
+        n1 = td._gen_node(None, '_regex_target_tgt666:t1')
+        gen = td._add_task(n1)
+        # target not found after generating all tasks from regex group
+        pytest.raises(InvalidCommand, next, gen)
+
+
+
+
 class TestTaskDispatcher_get_next_node(object):
     def test_none(self):
         tasks = {'t1': Task('t1', None, task_dep=['t2']),
@@ -481,4 +776,41 @@ class TestTaskDispatcher_dispatcher_generator(object):
         assert "hold on" == next(gen)
         assert "hold on" == next(gen) # hold until t2 is done
         assert tasks[0] == gen.send(n2).task
+        pytest.raises(StopIteration, lambda gen: next(gen), gen)
+
+
+    def test_delayed_creation(self):
+        def creator():
+            yield {'name': 'foo1', 'actions': None, 'file_dep': ['bar']}
+            yield {'name': 'foo2', 'actions': None, 'targets': ['bar']}
+
+        delayed_loader = DelayedLoader(creator, executed='t2')
+        tasks = [Task('t0', None, task_dep=['t1']),
+                 Task('t1', None, loader=delayed_loader),
+                 Task('t2', None)]
+
+        control = TaskControl(tasks)
+        control.process(['t0'])
+        disp = control.task_dispatcher()
+        gen = disp.generator
+        nt2 = next(gen)
+        assert nt2.task.name == "t2"
+
+        # wait for t2 to be executed
+        assert "hold on" == next(gen)
+        assert "hold on" == next(gen) # hold until t2 is done
+
+        # delayed creation of tasks for t1 does not mess existing info
+        assert disp.nodes['t1'].waiting_me == set([disp.nodes['t0']])
+        nf2 = gen.send(nt2)
+        assert disp.nodes['t1'].waiting_me == set([disp.nodes['t0']])
+
+        assert nf2.task.name == "t1:foo2"
+        nf1 = gen.send(nf2)
+        assert nf1.task.name == "t1:foo1"
+        assert nf1.task.task_dep == ['t1:foo2'] # implicit dep added
+        nt1 = gen.send(nf1)
+        assert nt1.task.name == "t1"
+        nt0 = gen.send(nt1)
+        assert nt0.task.name == "t0"
         pytest.raises(StopIteration, lambda gen: next(gen), gen)

@@ -5,7 +5,7 @@ def task_compute():
 
 
 def show_getargs(values):
-   print values
+   print(values)
 
 def task_args_dict():
   return {'actions': [show_getargs],

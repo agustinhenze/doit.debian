@@ -1,9 +1,6 @@
-# coding=UTF-8
-
 import os
 import datetime
 import operator
-import six
 
 import pytest
 
@@ -55,75 +52,6 @@ class TestRunOnce(object):
         assert True == tools.run_once(t, t.values)
 
 
-class TestResultDep(object):
-    def test_single(self, depfile):
-        dep_manager = depfile
-
-        tasks = {'t1': task.Task("t1", None, uptodate=[tools.result_dep('t2')]),
-                 't2': task.Task("t2", None),
-                 }
-        # _config_task was executed and t2 added as task_dep
-        assert ['t2'] == tasks['t1'].task_dep
-
-        # first t2 result
-        tasks['t2'].result = 'yes'
-        dep_manager.save_success(tasks['t2'])
-        assert 'run' == dep_manager.get_status(tasks['t1'], tasks)  # first time
-
-        tasks['t1'].save_extra_values()
-        dep_manager.save_success(tasks['t1'])
-        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks)
-
-        # t2 result changed
-        tasks['t2'].result = '222'
-        dep_manager.save_success(tasks['t2'])
-
-        tasks['t1'].save_extra_values()
-        dep_manager.save_success(tasks['t1'])
-        assert 'run' == dep_manager.get_status(tasks['t1'], tasks)
-
-        tasks['t1'].save_extra_values()
-        dep_manager.save_success(tasks['t1'])
-        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks)
-
-
-    def test_group(self, depfile):
-        dep_manager = depfile
-
-        tasks = {'t1': task.Task("t1", None, uptodate=[tools.result_dep('t2')]),
-                 't2': task.Task("t2", None, task_dep=['t2:a', 't2:b'],
-                                 has_subtask=True),
-                 't2:a': task.Task("t2:a", None),
-                 't2:b': task.Task("t2:b", None),
-                 }
-        # _config_task was executed and t2 added as task_dep
-        assert ['t2'] == tasks['t1'].task_dep
-
-        # first t2 result
-        tasks['t2:a'].result = 'yes1'
-        dep_manager.save_success(tasks['t2:a'])
-        tasks['t2:b'].result = 'yes2'
-        dep_manager.save_success(tasks['t2:b'])
-        assert 'run' == dep_manager.get_status(tasks['t1'], tasks)  # first time
-
-        tasks['t1'].save_extra_values()
-        dep_manager.save_success(tasks['t1'])
-        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks)
-
-        # t2 result changed
-        tasks['t2:a'].result = '222'
-        dep_manager.save_success(tasks['t2:a'])
-
-        tasks['t1'].save_extra_values()
-        dep_manager.save_success(tasks['t1'])
-        assert 'run' == dep_manager.get_status(tasks['t1'], tasks)
-
-        tasks['t1'].save_extra_values()
-        dep_manager.save_success(tasks['t1'])
-        assert 'up-to-date' == dep_manager.get_status(tasks['t1'], tasks)
-
-
-
 class TestConfigChanged(object):
     def test_invalid_type(self):
         class NotValid(object):pass
@@ -141,7 +69,7 @@ class TestConfigChanged(object):
         assert False == ub(t1, t1.values)
 
     def test_unicode(self):
-        ua = tools.config_changed({'x':six.u("中文")})
+        ua = tools.config_changed({'x': "中文"})
         ub = tools.config_changed('b')
         t1 = task.Task("TaskX", None, uptodate=[ua])
         assert False == ua(t1, t1.values)
@@ -261,7 +189,7 @@ class TestCheckTimestampUnchanged(object):
         assert True == check(t, t.values)
 
         # stored timestamp less than current, up to date
-        future_time = list(six.itervalues(t.values))[0] + 100
+        future_time = list(t.values.values())[0] + 100
         monkeypatch.setattr(check, '_get_time', lambda: future_time)
         assert False == check(t, t.values)
 

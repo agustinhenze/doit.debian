@@ -5,19 +5,38 @@ import os
 import time
 import sys
 from multiprocessing import Process
+from subprocess import call
 
+from .exceptions import InvalidCommand
 from .cmdparse import CmdParse
 from .filewatch import FileModifyWatcher
 from .cmd_base import tasks_and_deps_iter
-from .cmd_base import DoitCmdBase, check_tasks_exist
+from .cmd_base import DoitCmdBase
 from .cmd_run import opt_verbosity, Run
 
-opt_reporter = {'name':'reporter',
-                 'short': None,
-                 'long': None,
-                 'type':str,
-                 'default': 'executed-only',
-                }
+opt_reporter = {
+    'name':'reporter',
+    'short': None,
+    'long': None,
+    'type':str,
+    'default': 'executed-only',
+}
+
+opt_success = {
+    'name':'success_callback',
+    'short': None,
+    'long': 'success',
+    'type':str,
+    'default': '',
+}
+
+opt_failure = {
+    'name':'failure_callback',
+    'short': None,
+    'long': 'failure',
+    'type':str,
+    'default': '',
+}
 
 
 class Auto(DoitCmdBase):
@@ -32,8 +51,9 @@ class Auto(DoitCmdBase):
     doc_purpose = "automatically execute tasks when a dependency changes"
     doc_usage = "[TASK ...]"
     doc_description = None
+    execute_tasks = True
 
-    cmd_options = (opt_verbosity, opt_reporter)
+    cmd_options = (opt_verbosity, opt_reporter, opt_success, opt_failure)
 
     @staticmethod
     def _find_file_deps(tasks, sel_tasks):
@@ -60,6 +80,17 @@ class Auto(DoitCmdBase):
         return False
 
 
+    @staticmethod
+    def _run_callback(result, success_callback, failure_callback):
+        '''run callback if any after task execution'''
+        if result == 0:
+            if success_callback:
+                call(success_callback, shell=True)
+        else:
+            if failure_callback:
+                call(failure_callback, shell=True)
+
+
     def run_watch(self, params, args):
         """Run tasks and wait for file system event
 
@@ -69,21 +100,31 @@ class Auto(DoitCmdBase):
         started = time.time()
 
         # execute tasks using Run Command
-        ar = Run(task_loader=self._loader)
-        params.add_defaults(CmdParse(ar.options).parse([])[0])
-        result = ar.execute(params, args)
+        arun = Run(task_loader=self.loader)
+        params.add_defaults(CmdParse(arun.get_options()).parse([])[0])
+        try:
+            result = arun.execute(params, args)
+        # ??? actually tested but coverage doesnt get it...
+        except InvalidCommand as err: # pragma: no cover
+            sys.stderr.write("ERROR: %s\n" % str(err))
+            sys.exit(3)
+
+        # user custom callbacks for result
+        self._run_callback(result,
+                           params.pop('success_callback', None),
+                           params.pop('failure_callback', None))
 
         # get list of files to watch on file system
-        watch_files = self._find_file_deps(ar.control.tasks,
-                                           ar.control.selected_tasks)
+        watch_files = self._find_file_deps(arun.control.tasks,
+                                           arun.control.selected_tasks)
 
         # Check for timestamp changes since run started,
         # if change, restart straight away
-        if not self._dep_changed(watch_files, started, ar.control.targets):
+        if not self._dep_changed(watch_files, started, arun.control.targets):
             # set event handler. just terminate process.
             class DoitAutoRun(FileModifyWatcher):
                 def handle_event(self, event):
-                    #print "FS EVENT -> ", event
+                    # print("FS EVENT -> {}".format(event))
                     sys.exit(result)
             file_watcher = DoitAutoRun(watch_files)
             # kick start watching process
@@ -92,16 +133,13 @@ class Auto(DoitCmdBase):
 
     def execute(self, params, args):
         """loop executing tasks until process is interrupted"""
-        # check provided task names
-        if args:
-            task_list = self._loader.load_tasks(self, params, args)[0]
-            tasks = dict([(t.name, t) for t in task_list])
-            check_tasks_exist(tasks, args)
-
         while True:
             try:
-                p = Process(target=self.run_watch, args=(params, args))
-                p.start()
-                p.join()
+                proc = Process(target=self.run_watch, args=(params, args))
+                proc.start()
+                proc.join()
+                # if error on given command line, terminate.
+                if proc.exitcode == 3:
+                    return 3
             except KeyboardInterrupt:
                 return 0

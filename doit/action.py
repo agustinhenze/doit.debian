@@ -1,10 +1,11 @@
 """Implements actions used by doit tasks
 """
 
+import os
 import subprocess, sys
-import six
-from six import StringIO
+from io import StringIO
 import inspect
+from pathlib import PurePath
 from threading import Thread
 
 from .exceptions import InvalidTask, TaskFailed, TaskError
@@ -40,10 +41,10 @@ class BaseAction(object):
         if not task:
             return kwargs
 
-        try:
-            argspec = inspect.getargspec(func)
-        except TypeError:
-            argspec = inspect.getargspec(func.__call__)
+        func_sig = inspect.signature(func)
+        sig_params = func_sig.parameters.values()
+        func_has_kwargs = any(p.kind==p.VAR_KEYWORD for p in sig_params)
+
         # use task meta information as extra_args
         meta_args = {
             'task': task,
@@ -55,29 +56,30 @@ class BaseAction(object):
         extra_args = dict(meta_args)
         # tasks parameter options
         extra_args.update(task.options)
+        if task.pos_arg is not None:
+            extra_args[task.pos_arg] = task.pos_arg_val
         kwargs = kwargs.copy()
+        bound_args = func_sig.bind_partial(*args)
 
-        for key in six.iterkeys(extra_args):
+        for key in extra_args.keys():
             # check key is a positional parameter
-            if key in argspec.args:
-                arg_pos = argspec.args.index(key)
+            if key in func_sig.parameters:
+                sig_param = func_sig.parameters[key]
 
                 # it is forbidden to use default values for this arguments
                 # because the user might be unware of this magic.
-                if (key in meta_args and argspec.defaults and
-                    len(argspec.defaults) > (len(argspec.args) - (arg_pos+1))):
+                if (key in meta_args and sig_param.default!=sig_param.empty):
                     msg = ("Task %s, action %s(): The argument '%s' is not "
                            "allowed  to have a default value (reserved by doit)"
                            % (task.name, func.__name__, key))
                     raise InvalidTask(msg)
 
-                # if not over-written by value passed in *args use extra_arg
-                overwritten = arg_pos < len(args)
-                if not overwritten:
+                # if value not taken from position parameter
+                if key not in bound_args.arguments:
                     kwargs[key] = extra_args[key]
 
             # if function has **kwargs include extra_arg on it
-            elif argspec.keywords and key not in kwargs:
+            elif func_has_kwargs and key not in kwargs:
                 kwargs[key] = extra_args[key]
         return kwargs
 
@@ -96,11 +98,21 @@ class CmdAction(BaseAction):
     @ivar save_out: (str) name used to save output in `values`
     @ivar shell: use shell to execute command
                  see subprocess.Popen `shell` attribute
+    @ivar encoding (str): encoding of the process output
+    @ivar decode_error (str): value for decode() `errors` param
+                              while decoding process output
     @ivar pkwargs: Popen arguments except 'stdout' and 'stderr'
     """
 
     def __init__(self, action, task=None, save_out=None, shell=True,
+                 encoding='utf-8', decode_error='replace', buffering=0,
                  **pkwargs): #pylint: disable=W0231
+        '''
+        :ivar buffering: (int) stdout/stderr buffering.
+               Not to be confused with subprocess buffering
+               -   0 -> line buffering
+               -   positive int -> number of bytes
+        '''
         for forbidden in ('stdout', 'stderr'):
             if forbidden in pkwargs:
                 msg = "CmdAction can't take param named '{0}'."
@@ -113,11 +125,14 @@ class CmdAction(BaseAction):
         self.values = {}
         self.save_out = save_out
         self.shell = shell
+        self.encoding = encoding
+        self.decode_error = decode_error
         self.pkwargs = pkwargs
+        self.buffering = buffering
 
     @property
     def action(self):
-        if isinstance(self._action, (six.string_types, list)):
+        if isinstance(self._action, (str, list)):
             return self._action
         else:
             # action can be a callable that returns a string command
@@ -127,20 +142,20 @@ class CmdAction(BaseAction):
 
 
     def _print_process_output(self, process, input_, capture, realtime):
-        """read 'input_' untill process is terminated
-        write 'input_' content to 'capture' and 'realtime' streams
+        """Reads 'input_' untill process is terminated.
+        Writes 'input_' content to 'capture' (string)
+        and 'realtime' stream
         """
-        if realtime:
-            if hasattr(realtime, 'encoding'):
-                encoding = realtime.encoding or 'utf-8'
-            else: # pragma: no cover
-                encoding = 'utf-8'
-
-        while True:
+        if self.buffering:
+            read = lambda: input_.read(self.buffering)
+        else:
             # line buffered
+            read = lambda: input_.readline()
+        while True:
             try:
-                line = input_.readline().decode('utf-8')
+                line = read().decode(self.encoding, self.decode_error)
             except:
+                # happens when fails to decoded input
                 process.terminate()
                 input_.read()
                 raise
@@ -148,10 +163,8 @@ class CmdAction(BaseAction):
                 break
             capture.write(line)
             if realtime:
-                if sys.version > '3': # pragma: no cover
-                    realtime.write(line)
-                else:
-                    realtime.write(line.encode(encoding))
+                realtime.write(line)
+                realtime.flush() # required if on byte buffering mode
 
 
     def execute(self, out=None, err=None):
@@ -172,12 +185,22 @@ class CmdAction(BaseAction):
         try:
             action = self.expand_action()
         except Exception as exc:
-            return TaskError("CmdAction Error creating command string", exc)
+            return TaskError(
+                "CmdAction Error creating command string", exc)
+
+        # set environ to change output buffering
+        env = None
+        if self.buffering:
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
 
         # spawn task process
         process = subprocess.Popen(
-            action, shell=self.shell,
+            action,
+            shell=self.shell,
+            #bufsize=2, # ??? no effect use PYTHONUNBUFFERED instead
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=env,
             **self.pkwargs)
 
         output = StringIO()
@@ -203,12 +226,12 @@ class CmdAction(BaseAction):
         # it doesnt make so much difference to return as Error or Failed anyway
         if process.returncode > 125:
             return TaskError("Command error: '%s' returned %s" %
-                            (action,process.returncode))
+                             (action, process.returncode))
 
         # task failure
         if process.returncode != 0:
             return TaskFailed("Command failed: '%s' returned %s" %
-                             (action,process.returncode))
+                              (action, process.returncode))
 
         # save stdout in values
         if self.save_out:
@@ -216,15 +239,28 @@ class CmdAction(BaseAction):
 
 
     def expand_action(self):
-        """expand action string using task meta informations
-        @returns (string) - expanded string after substitution
+        """Expand action using task meta informations if action is a string.
+        Convert `Path` elements to `str` if action is a list.
+        @returns: string -> expanded string if action is a string
+                  list - string -> expanded list of command elements
         """
         if not self.task:
             return self.action
 
         # cant expand keywords if action is a list of strings
         if isinstance(self.action, list):
-            return self.action
+            action = []
+            for element in self.action:
+                if isinstance(element, str):
+                    action.append(element)
+                elif isinstance(element, PurePath):
+                    action.append(str(element))
+                else:
+                    msg = ("%s. CmdAction element must be a str " +
+                           "or Path from pathlib. Got '%r' (%s)")
+                    raise InvalidTask(
+                        msg % (self.task.name, element, type(element)))
+            return action
 
         subs_dict = {'targets' : " ".join(self.task.targets),
                      'dependencies': " ".join(self.task.file_dep)}
@@ -233,6 +269,13 @@ class CmdAction(BaseAction):
             subs_dict['changed'] = " ".join(self.task.dep_changed)
         # task option parameters
         subs_dict.update(self.task.options)
+        # convert postional parameters from list space-separated string
+        if self.task.pos_arg:
+            if self.task.pos_arg_val:
+                pos_val = ' '.join(self.task.pos_arg_val)
+            else:
+                pos_val = ''
+            subs_dict[self.task.pos_arg] = pos_val
         return self.action % subs_dict
 
     def __str__(self):
@@ -373,11 +416,13 @@ class PythonAction(BaseAction):
                               (self.py_callable, returned_value))
         elif returned_value is True or returned_value is None:
             pass
-        elif isinstance(returned_value, six.string_types):
+        elif isinstance(returned_value, str):
             self.result = returned_value
         elif isinstance(returned_value, dict):
             self.values = returned_value
             self.result = returned_value
+        elif isinstance(returned_value, (TaskFailed, TaskError)):
+            return returned_value
         else:
             return TaskError("Python Task error: '%s'. It must return:\n"
                              "False for failed task.\n"
@@ -406,7 +451,7 @@ def create_action(action, task_ref):
         action.task = task_ref
         return action
 
-    if isinstance(action, six.string_types):
+    if isinstance(action, str):
         return CmdAction(action, task_ref, shell=True)
 
     if isinstance(action, list):
